@@ -34,7 +34,7 @@ Implemented semantics
 - Arithmetic is numeric; plus also concatenates two strings.
 - Division/modulo by zero reports an error.
 - print(expr) writes one value per line.
-- One-million execution fuel guards runaway statements and loop iterations; recursive calls have a bounded depth.\n- Bootstrap primitive type inference checks arithmetic, comparisons, logical operators, Boolean conditions, local annotations (`Number`, `String`, `Bool`, `Nil`) and inferred assignments. This is not yet a sound whole-program type system.
+- One-million execution fuel guards runaway statements and loop iterations; recursive calls have a bounded depth.\n- Bootstrap primitive type inference checks arithmetic, comparisons, logical operators, Boolean conditions, local annotations, function parameter types, call arguments and explicit return annotations (`Number`, `String`, `Bool`, `Nil`). This is not yet a sound whole-program type system.
 
 Not implemented
 --------------
