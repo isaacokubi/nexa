@@ -7,7 +7,7 @@ pub struct Span{pub start:usize,pub end:usize,pub line:usize,pub column:usize}
 pub struct Diagnostic{pub message:String,pub span:Span}
 impl fmt::Display for Diagnostic{fn fmt(&self,f:&mut fmt::Formatter<'_>)->fmt::Result{write!(f,"{}:{}: error: {}",self.span.line,self.span.column,self.message)}}
 impl std::error::Error for Diagnostic{}
-fn diag(s:&str,m:impl Into<String>)->Diagnostic{Diagnostic{message:m.into(),span:Span{start:0,end:0,line:1,column:1}}}
+fn diag(_s:&str,m:impl Into<String>)->Diagnostic{Diagnostic{message:m.into(),span:Span{start:0,end:0,line:1,column:1}}}
 
 #[derive(Debug,Clone,PartialEq)]
 pub enum TokenKind{Ident(String),Number(f64),String(String),Fn,Let,Var,Return,If,Else,While,True,False,Nil,Print,Module,Plus,Minus,Star,Slash,Percent,Eq,EqEq,Bang,BangEq,Lt,LtEq,Gt,GtEq,AndAnd,OrOr,Arrow,Colon,Comma,Semi,LParen,RParen,LBrace,RBrace,Eof}
