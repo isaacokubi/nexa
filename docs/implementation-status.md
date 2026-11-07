@@ -20,7 +20,7 @@ This status is tied to the current repository branch and must not be confused wi
 - Declared type AST/HIR and a complete, sound static type system; bootstrap Unknown inference and source-span propagation remain limited.
 - Integer widths, overflow modes, generics, traits, structs, enums, pattern matching.
 - Ownership/borrow/lifetime checking and destructor semantics.
-- Full typed MIR, optimization pipeline, IR execution engine, LLVM backend, object/executable emission.
+- Full typed MIR, optimization pipeline, LLVM backend, object/executable emission.
 - Runtime ABI, native allocator, platform FFI.
 - Modules/import resolution and package manager.
 - Complete standard library.
