@@ -1,3 +1,4 @@
+pub mod ir;
 use std::{collections::HashMap,fmt,fs};
 
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
