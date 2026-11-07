@@ -103,7 +103,7 @@ Add precise spans to declaration/assignment/function diagnostics, then introduce
 - `Parser::new` now appends EOF for external token streams that omit it, and the parser handles an empty token vector without indexing or panicking.
 - Added tests for both depth limits and EOF normalization.
 - Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (46 passed), `cargo clippy --workspace --all-targets -- -D warnings`, `git diff --check`, and both examples via `run` and `ir-run` passed.
-- This milestone is currently uncommitted. The previous commit is `c102714`; push status has not been attempted.
+- Committed as `b780540` (`fix(parser): bound recursive parsing depth`) and pushed to `origin/feat/compiler-foundation`.
 - Next: improve semantic declaration spans and introduce typed HIR. Native backend, full types, ownership, modules/packages, standard library, async, tooling, fuzzing, and releases remain incomplete.
 
 ## Accuracy rule
