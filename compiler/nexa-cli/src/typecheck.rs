@@ -21,6 +21,7 @@ fn infer(e:&Expr,s:&Scope,fs:&HashMap<String,usize>)->Result<Type,Diagnostic>{
  }
 }
 fn stmts(b:&[Stmt],s:&mut Scope,fs:&HashMap<String,usize>)->Result<(),Diagnostic>{for x in b{match x{
+ Stmt::While(c,b)=>{let t=infer(c,s,fs)?;if t!=Type::Bool&&t!=Type::Unknown{return Err(error(format!("while condition must be Bool, found {t}")))}let mut x=s.clone();stmts(b,&mut x,fs)?;},
  Stmt::Let(n,e,_)=>{let t=infer(e,s,fs)?;if s.contains_key(n){return Err(error(format!("'{n}' already declared in this scope")))}s.insert(n.clone(),t);},
  Stmt::Assign(n,e)=>{let old=*s.get(n).ok_or_else(||error(format!("undefined variable '{n}'")))?;let new=infer(e,s,fs)?;if old!=new&&new!=Type::Unknown{return Err(error(format!("cannot assign {new} to '{n}' of type {old}")))}},
  Stmt::Print(e)|Stmt::Expr(e)=>{infer(e,s,fs)?;},
