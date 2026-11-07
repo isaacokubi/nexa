@@ -6,7 +6,7 @@ NEXA is an experimental general-purpose language project aimed at native perform
 Current features
 ----------------
 - UTF-8 lexer, source spans, comments, string escapes and numeric literals
-- Recursive-descent parser and AST for functions, parameters, blocks, let/var (including checked local type annotations), return, if/else, while loops, calls and expressions
+- Recursive-descent parser and AST for functions, optionally typed parameters, blocks, let/var (including checked local type annotations), return, if/else, while loops, calls and expressions
 - Interpreter: numbers, strings, booleans, nil, arithmetic, comparisons and short-circuit logic
 - CLI: `nexa run|check|tokens|ast FILE`
 - Bootstrap static expression type checks (operator operands, assignment consistency where inferred, Boolean conditions)\n- Unit tests
