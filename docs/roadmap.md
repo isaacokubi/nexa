@@ -9,7 +9,7 @@ Averqun Roadmap
 - [x] Reject unresolved expression types after fixed-point parameter/return inference; preserve expression spans through type checking and execution
 - [x] Declaration/assignment source spans and typed HIR with resolved function/local IDs for primitive types
 - [x] Produce typed HIR with resolved local/function IDs and source spans
-- [ ] Lower typed HIR to stack IR; validate HIR and IR boundary
+- [x] Lower typed HIR to stack IR and validate HIR-to-IR boundary
 - [ ] Typed HIR and multi-file/module name resolution
 - [ ] Compile-pass/compile-fail harness and diagnostic snapshots
 - [ ] Specify and implement integer widths, overflow, float semantics, ABI and target triples

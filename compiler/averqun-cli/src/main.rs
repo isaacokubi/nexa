@@ -34,7 +34,7 @@ fn main() {
             .and_then(|t| Parser::new(t).parse())
             .map(|p| println!("{p:#?}")),
         "hir" => averqun::compile_to_hir(&src).map(|hir| println!("{hir:#?}")),
-        "check" => compile(&src).map(|_| println!("✓ {path}: syntax OK")),
+        "check" => averqun::compile_to_hir(&src).map(|_| println!("✓ {path}: syntax OK")),
         "ir" => compile(&src)
             .and_then(|p| lower(&p))
             .map(|m| println!("{m:#?}")),

@@ -5,7 +5,8 @@ This status is tied to the current repository branch and must not be confused wi
 ## Current checkpoint (2026-11-07)
 - HEAD before this work: `5d2e5f0` on `feat/compiler-foundation`, clean and tracking origin. Six existing stashes were preserved.
 - Typed HIR adds typed expression nodes, resolved function/local IDs, mutable local declarations, typed function signatures, and source spans. It is exposed through `compile_to_hir` and `averqun hir`.
-- The next task is to make the existing stack IR lower from typed HIR rather than directly from the AST, retaining AST compatibility for the interpreter.
+- Production stack IR now lowers from typed HIR; AST lowering is retained only in unit tests for differential checks. This HIR-to-IR checkpoint remains in progress pending full verification and commit.
+- Next after this checkpoint: expand the type system and lower-level control-flow representation. Native code generation remains a critical gap.
 - No native code generator, complete language type system, package system, standard library, async runtime, or LSP exists yet. Do not claim completion or merge to `main` while these acceptance gaps remain.
 
 ## Present in bootstrap
@@ -76,7 +77,8 @@ This status is tied to the current repository branch and must not be confused wi
 | Lexer, parser, primitive AST | TESTED | Nesting and operator-chain limits; no syntax recovery |
 | Basic name/scope/mutability checks | TESTED | Local IDs/spans now represented in typed HIR; module resolution absent |
 | Primitive type checking | TESTED | Rejects unresolved expressions and produces HIR for four primitive types |
-| Typed HIR | TESTED | Typed expression tree, function/local IDs, mutability, spans; stack IR still lowers directly from AST |
+| Typed HIR | TESTED | Typed expression tree, function/local IDs, mutability, spans |
+| Typed HIR to stack IR | IN PROGRESS | Production lowerer consumes HIR and checks types, IDs, scopes, returns and generated IR |
 | Stack IR validation and VM | TESTED | Structural/stack verification before execution; no optimizer or native backend |
 | Interpreter | TESTED | Basic semantics and resource bounds; aggregates/closures/errors absent |
 | Native backend, modules, package manager, standard library, concurrency, tooling | NOT STARTED | See release gates and roadmap |
@@ -104,7 +106,7 @@ This status is tied to the current repository branch and must not be confused wi
 
 ## Next implementation task
 
-Change stack IR lowering to consume typed HIR and validate the AST-to-HIR-to-IR boundary end to end.
+Finish typed-HIR-to-stack-IR regression and CLI verification, then start complete type-system expansion.
 
 ## Parser safety milestone (2026-11-07)
 - Added a 128-level recursion limit for nested expressions/unary operators and nested blocks, plus a 128-operator per-precedence chain limit to bound left-nested AST depth. Excess input produces a source-positioned diagnostic rather than risking process stack exhaustion in later compiler passes.
@@ -122,10 +124,16 @@ Change stack IR lowering to consume typed HIR and validate the AST-to-HIR-to-IR 
 
 ## Typed HIR milestone (2026-11-07)
 - Added typed HIR structures for functions, primitive-typed expressions, locals, statements, function calls and built-in output. Local references resolve to per-function `LocalId`s; function calls resolve to `FunctionId`s. HIR keeps mutability and declaration/expression/function spans.
-- Added `compile_to_hir` and `averqun hir FILE`. Invalid programs are rejected before HIR construction. The interpreter and existing stack IR continue to consume the AST for compatibility; lowering stack IR from HIR remains next.
+- Added `compile_to_hir` and `averqun hir FILE`. Invalid programs are rejected before HIR construction. The interpreter continues to consume AST; production stack IR lowering has since moved to HIR.
 - Added positive HIR ID/type/scope/span tests and a negative test proving type errors prevent HIR generation.
 - Verification: formatting, check, build, 50 workspace tests, Clippy with warnings denied, and diff check passed. Both examples successfully emitted HIR and ran through interpreter and IR VM. All three compile-fail fixtures remained rejected.
-- This milestone is verified but uncommitted at the present checkpoint.
+- Committed and pushed as `13744ef` (`feat(hir): add typed intermediate representation`).
+
+## Typed HIR to stack IR milestone (2026-11-07)
+- The production `ir::lower` now type-checks to HIR and lowers HIR directly. The old direct AST lowerer is compiled only in unit tests for differential comparison.
+- HIR lowering resolves local IDs to slots, resolves function IDs to calls, preserves spans, handles short-circuiting, blocks, branches, loops, calls, output, assignment and returns. It rejects malformed local/function IDs, unknown or inconsistent types, immutable writes, invalid returns and generated IR that fails the existing verifier.
+- The `check`, `ir`, and `ir-run` CLI paths now traverse HIR. Positive differential coverage combines alternative syntax, recursion, mutation, loops and short-circuit division-by-zero behavior. Negative tests mutate HIR to ensure invalid references, types, writes and return flow are rejected.
+- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (53 passed), Clippy with warnings denied, `git diff --check`, both examples through HIR generation/interpreter/IR VM, and all three compile-fail fixtures were verified. This checkpoint is currently uncommitted.
 
 ## Accuracy rule
 A feature is considered implemented only when code, tests, documentation, and a verified CI/build result support the claim. Roadmap completion is not a substitute for these artifacts.
