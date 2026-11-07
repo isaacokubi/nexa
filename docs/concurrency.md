@@ -1,6 +1,6 @@
-# NEXA Concurrency (Design)
+# Averqun Concurrency (Design)
 
-NEXA's concurrency model is intended to make data races impossible in safe code while retaining native scheduling and low overhead. This document is aspirational; the bootstrap interpreter is single-threaded.
+Averqun's concurrency model is intended to make data races impossible in safe code while retaining native scheduling and low overhead. This document is aspirational; the bootstrap interpreter is single-threaded.
 
 ## Proposed primitives
 - `spawn`: create a task with explicit ownership transfer.

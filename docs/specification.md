@@ -1,11 +1,11 @@
-NEXA Language Specification — Draft 0.1.0
+Averqun Language Specification — Draft 0.1.0
 ========================================
 
 Status: bootstrap draft. Normative guarantees are limited to the implemented subset.
 
 Identity and goals
 ------------------
-NEXA is intended to become a statically typed, memory-safe, ahead-of-time compiled language. The current implementation executes a dynamically represented subset in an interpreter; static typing, ownership and native code generation are not implemented.
+Averqun is intended to become a statically typed, memory-safe, ahead-of-time compiled language. The current implementation executes a dynamically represented subset in an interpreter; static typing, ownership and native code generation are not implemented.
 
 Lexical rules (implemented)
 --------------------------

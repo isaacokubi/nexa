@@ -1,10 +1,10 @@
 [package]
-name = "nexa"
+name = "averqun"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "NEXA language bootstrap compiler and interpreter"
+description = "Averqun language bootstrap compiler and interpreter"
 
 [[bin]]
-name = "nexa"
+name = "averqun"
 path = "src/main.rs"

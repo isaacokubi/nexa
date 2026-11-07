@@ -1,4 +1,4 @@
-# NEXA Standard Library Plan
+# Averqun Standard Library Plan
 
 The standard library is split into a small language core and platform/library modules. Modules listed here are planned unless marked bootstrap.
 

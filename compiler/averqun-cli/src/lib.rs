@@ -199,7 +199,13 @@ impl<'a> Lexer<'a> {
                         self.advance();
                     }
                 }
-                TokenKind::Number(self.src[s..self.pos].parse().unwrap_or(0.0))
+                let value = self.src[s..self.pos]
+                    .parse::<f64>()
+                    .map_err(|_| self.error("invalid numeric literal", s, l, c))?;
+                if !value.is_finite() {
+                    return Err(self.error("numeric literal is out of range", s, l, c));
+                }
+                TokenKind::Number(value)
             } else if ch == '"' {
                 self.advance();
                 let mut v = String::new();
@@ -1194,7 +1200,7 @@ mod tests {
     }
     #[test]
     fn parses_and_executes_weave_syntax() {
-        let program = compile(include_str!("../../../examples/weave-hello.nexa")).unwrap();
+        let program = compile(include_str!("../../../examples/weave-hello.avq")).unwrap();
         let (value, output) = Interpreter::new(program).run_captured().unwrap();
         assert_eq!(value, Value::Nil);
         assert_eq!(output, vec!["42"]);

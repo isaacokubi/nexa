@@ -1,4 +1,4 @@
-NEXA Roadmap
+Averqun Roadmap
 ============
 
 - [x] Rust workspace and CLI bootstrap

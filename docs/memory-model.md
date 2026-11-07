@@ -1,7 +1,7 @@
-# NEXA Memory and Ownership Model (Design)
+# Averqun Memory and Ownership Model (Design)
 
 ## Safety objective
-Safe NEXA code must not permit use-after-free, double-free, dangling references, data races, or invalid pointer dereferences. This is a design specification, not an implemented borrow checker.
+Safe Averqun code must not permit use-after-free, double-free, dangling references, data races, or invalid pointer dereferences. This is a design specification, not an implemented borrow checker.
 
 ## Ownership
 Every owned value has one responsible owner. Moving a non-Copy value transfers ownership and invalidates the source binding. Scope exit releases owned resources deterministically, subject to destructor rules.

@@ -1,10 +1,10 @@
-# NEXA Language Specification
+# Averqun Language Specification
 
 **Version:** 0.1.0 bootstrap with an experimental 0.2 surface-syntax extension
 **Status:** normative for the implemented bootstrap subset; design choices are marked **Planned** and are not accepted by the compiler. The syntax in section 10 is implemented as an experimental alternative form.
-**Conformance:** this document describes the Rust frontend and interpreter in this repository. A program outside the implemented subset is not a NEXA 0.1 program, even if a future design below describes it.
+**Conformance:** this document describes the Rust frontend and interpreter in this repository. A program outside the implemented subset is not an Averqun 0.1 program, even if a future design below describes it.
 
-NEXA is a statically checked language in development. The current compiler is a small Rust bootstrap with an interpreter and a reference stack IR VM. It does not emit native code and does not yet enforce a sound whole-program type system or memory-safety model. The version number and feature labels in this document must not be read as release claims.
+Averqun is a statically checked language in development. The current compiler is a small Rust bootstrap with an interpreter and a reference stack IR VM. It does not emit native code and does not yet enforce a sound whole-program type system or memory-safety model. The version number and feature labels in this document must not be read as release claims.
 
 ## 1. Source files and lexical rules
 
@@ -75,13 +75,13 @@ Truthiness is used by the interpreter's runtime helper: only `false` and `nil` a
 
 Lexical, syntax, static-check, and runtime failures are reported as diagnostics and cause a nonzero CLI exit. The interpreter and IR VM impose a one-million-step execution budget and a bounded recursive call depth (64). Exhausting either bound is an error. The current runtime has no recoverable language-level error value, exception handling, stack trace, or cleanup/unwinding guarantee.
 
-There is no language-level memory ownership or borrowing rule yet. The implementation uses Rust-managed memory for compiler/runtime data, but this does not establish safety guarantees for future compiled NEXA programs. NEXA code currently has no raw pointers, explicit allocation, destructors, or FFI.
+There is no language-level memory ownership or borrowing rule yet. The implementation uses Rust-managed memory for compiler/runtime data, but this does not establish safety guarantees for future compiled Averqun programs. Averqun code currently has no raw pointers, explicit allocation, destructors, or FFI.
 
 ## 6. Compilation model and tools
 
 The implemented pipeline is UTF-8 source → lexer → recursive-descent parser → AST → name/mutability checks and bootstrap primitive type checks. The AST may be lowered to target-independent stack IR and executed in a reference VM. `run` uses the AST interpreter. `ir-run` executes lowered IR. These execution paths are not yet covered by comprehensive differential tests.
 
-The CLI currently supports `run`, `check`, `tokens`, `ast`, `ir`, and `ir-run`; invoke a command with a `.nexa` file. `ir` prints IR for inspection. No command emits a native object or executable. The repository has no package manifest, dependency resolver, standard-library distribution, formatter, documentation generator, LSP, or debugger.
+The CLI currently supports `run`, `check`, `tokens`, `ast`, `ir`, and `ir-run`; invoke a command with a `.avq` file. `ir` prints IR for inspection. No command emits a native object or executable. The repository has no package manifest, dependency resolver, standard-library distribution, formatter, documentation generator, LSP, or debugger.
 
 ## 7. Planned design decisions (not accepted syntax)
 
@@ -110,7 +110,7 @@ While the language is experimental, compiler behavior may change between minor v
 
 This is within the implemented subset:
 
-```nexa
+```averqun
 fn add(a: Number, b: Number) -> Number {
     return a + b
 }
@@ -123,7 +123,7 @@ fn main() {
 
 This is intentionally outside the implemented subset (generic syntax is not recognized):
 
-```nexa
+```averqun
 fn identity<T>(value: T) -> T {
     return value
 }
@@ -131,11 +131,11 @@ fn identity<T>(value: T) -> T {
 
 ## 10. Experimental alternative syntax
 
-The bootstrap grammar above records the original syntax retained by the parser for compatibility. An alternative form uses NEXA-specific vocabulary and call/declaration markers. This form is executable today but remains experimental while its grammar and migration policy are evaluated. New examples should prefer this form; the legacy form will not automatically be part of a stable release.
+The bootstrap grammar above records the original syntax retained by the parser for compatibility. An alternative form uses Averqun-specific vocabulary and call/declaration markers. This form is executable today but remains experimental while its grammar and migration policy are evaluated. New examples should prefer this form; the legacy form will not automatically be part of a stable release.
 
 An initial, unimplemented syntax direction is a **weave** declaration with bracketed parameter clauses, `gives` for a result type, `kept`/`live` bindings, `:=` initialization, `when`/`otherwise`, `again while`, `yield`, and `show`:
 
-```nexa
+```averqun
 weave add[left: Number, right: Number] gives Number {
     yield left + right
 }
@@ -161,9 +161,9 @@ weave_call     = identifier "!" "{" [ arguments ] "}" ;
 
 The alternative form keeps the same type and runtime semantics as the bootstrap form. `kept` is immutable; `live` is mutable. `yield` returns from a function. `when` requires a `Bool` condition, and `otherwise` is optional. `again while` has the same loop semantics as legacy `while`. `show` writes one value on its own output line.
 
-The lexer and parser currently implement these declarations, bindings, returns, calls, output statements, conditionals, and loops. The existing type checker and both execution paths handle their semantics. Other syntax remains as documented in the bootstrap grammar. The parser currently permits legacy and alternative forms in the same file; the compiler does not yet enforce a language-version declaration. Before stabilization, settle whether to remove legacy spelling, provide an automated migration, or maintain both forms. No existing language's tutorial text, examples, standard-library naming, documentation wording, or implementation code should be copied into NEXA. Similarity of common programming concepts or short syntax tokens is not, by itself, a legal conclusion.
+The lexer and parser currently implement these declarations, bindings, returns, calls, output statements, conditionals, and loops. The existing type checker and both execution paths handle their semantics. Other syntax remains as documented in the bootstrap grammar. The parser currently permits legacy and alternative forms in the same file; the compiler does not yet enforce a language-version declaration. Before stabilization, settle whether to remove legacy spelling, provide an automated migration, or maintain both forms. No existing language's tutorial text, examples, standard-library naming, documentation wording, or implementation code should be copied into Averqun. Similarity of common programming concepts or short syntax tokens is not, by itself, a legal conclusion.
 
-Distinctive syntax cannot by itself prevent legal disputes. Copyright can protect software expression while excluding ideas and methods of operation; names may raise separate trademark issues. A public software project already uses the name “Nexa” for a programming language at [nexa-lang.com](https://www.nexa-lang.com/). Before a public release, perform a professional name clearance in the intended jurisdictions and consider a different project name if advised. A web or database search is not legal clearance.
+Distinctive syntax cannot by itself prevent legal disputes. The U.S. Copyright Office explains that copyright protects software expression but not ideas, systems, or methods of operation ([FAQ](https://copyright.gov/help/faq/faq-protect.html)); names may raise separate trademark issues. A separate public software project already uses the former name “Nexa” for a programming language at [nexa-lang.com](https://www.nexa-lang.com/). Averqun is the new working name, not a cleared mark. The preliminary web search found no obvious exact-name language or software project, but that does not establish availability. Before a public release, perform a professional name clearance in the intended jurisdictions; the [USPTO search guidance](https://www.uspto.gov/trademarks/search/federal-trademark-searching) explains that database searches cannot guarantee registrability. This is not a legal opinion.
 
 ## 11. Change control
 

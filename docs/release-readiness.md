@@ -1,6 +1,6 @@
 # Release Readiness and Verification
 
-NEXA is currently an experimental bootstrap interpreter/frontend. It is not alpha-complete, production-ready, or memory-safe by compiler guarantee.
+Averqun is currently an experimental bootstrap interpreter/frontend. It is not alpha-complete, production-ready, or memory-safe by compiler guarantee.
 
 ## Required gates for an alpha compiler
 - [ ] Grammar and AST fully cover the accepted language subset.
@@ -21,8 +21,8 @@ Run:
 ```sh
 cargo test --workspace
 cargo build --workspace
-cargo run -p nexa -- check examples/hello.nexa
-cargo run -p nexa -- run examples/hello.nexa
+cargo run -p averqun -- check examples/hello.avq
+cargo run -p averqun -- run examples/hello.avq
 ```
 
 A successful bootstrap check does not establish native compilation, memory safety, or production readiness.

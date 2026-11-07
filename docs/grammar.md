@@ -1,6 +1,6 @@
-# NEXA Bootstrap Grammar
+# Averqun Bootstrap Grammar
 
-This file records the original bootstrap grammar. The parser also accepts the experimental alternative syntax described in [the language specification](language-specification.md#10-experimental-alternative-syntax). It is not the final NEXA grammar.
+This file records the original bootstrap grammar. The parser also accepts the experimental alternative syntax described in [the language specification](language-specification.md#10-experimental-alternative-syntax). It is not the final Averqun grammar.
 
 ```ebnf
 program       = { module_decl | function } ;

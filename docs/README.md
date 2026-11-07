@@ -1,7 +1,7 @@
-# NEXA Documentation
+# Averqun Documentation
 
 - [Language specification](language-specification.md) — normative bootstrap subset and clearly separated planned design choices.
-- [Alternative syntax](language-specification.md#10-experimental-alternative-syntax) — implemented experimental NEXA surface grammar.
+- [Alternative syntax](language-specification.md#10-experimental-alternative-syntax) — implemented experimental Averqun surface grammar.
 - [Bootstrap notes](specification.md) — earlier concise implementation snapshot.
 - [Architecture](architecture.md) — compiler stages and boundaries.
 - [Roadmap](roadmap.md) — planned implementation sequence.

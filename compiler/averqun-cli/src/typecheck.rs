@@ -1,4 +1,4 @@
-//! Static type inference and operator validation for the NEXA bootstrap AST.
+//! Static type inference and operator validation for the Averqun bootstrap AST.
 use crate::{Diagnostic, Expr, Function, Program, Span, Stmt, TokenKind, Value};
 use std::collections::HashMap;
 

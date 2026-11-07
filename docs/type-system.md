@@ -1,4 +1,4 @@
-# NEXA Type System (Bootstrap + Design)
+# Averqun Type System (Bootstrap + Design)
 
 ## Status and boundary
 

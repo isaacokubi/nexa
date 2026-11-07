@@ -1,4 +1,4 @@
-//! Stack-based intermediate representation for the NEXA bootstrap compiler.
+//! Stack-based intermediate representation for the Averqun bootstrap compiler.
 //!
 //! This is a stable boundary between the source AST and future optimization /
 //! native backends. Instructions are deliberately target-independent.
@@ -34,6 +34,215 @@ pub struct FunctionIr {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ModuleIr {
     pub functions: Vec<FunctionIr>,
+}
+
+/// Validate module structure and stack/local invariants before execution or
+/// handing IR to a future backend.
+pub fn validate(module: &ModuleIr) -> Result<(), Diagnostic> {
+    let span = Span {
+        start: 0,
+        end: 0,
+        line: 1,
+        column: 1,
+    };
+    let mut functions = HashMap::new();
+    for function in &module.functions {
+        if functions.insert(function.name.as_str(), function).is_some() {
+            return Err(error(
+                format!("duplicate IR function '{}'", function.name),
+                span,
+            ));
+        }
+        if function.parameter_count > function.local_count as usize {
+            return Err(error(
+                format!(
+                    "IR function '{}' has fewer locals than parameters",
+                    function.name
+                ),
+                span,
+            ));
+        }
+        if function.instructions.is_empty() {
+            return Err(error(
+                format!("IR function '{}' has no instructions", function.name),
+                span,
+            ));
+        }
+    }
+    let Some(main) = functions.get("main") else {
+        return Err(error("IR module has no main function", span));
+    };
+    if main.parameter_count != 0 {
+        return Err(error("IR main function must not take parameters", span));
+    }
+
+    for function in &module.functions {
+        let len = function.instructions.len();
+        let mut depths = vec![None; len];
+        let mut work = vec![(0usize, 0usize)];
+        while let Some((pc, depth)) = work.pop() {
+            if pc == len {
+                return Err(error(
+                    format!("IR function '{}' can fall off its end", function.name),
+                    span,
+                ));
+            }
+            if let Some(previous) = depths[pc] {
+                if previous != depth {
+                    return Err(error(
+                        format!(
+                            "inconsistent stack depth at instruction {pc} in '{}'",
+                            function.name
+                        ),
+                        span,
+                    ));
+                }
+                continue;
+            }
+            depths[pc] = Some(depth);
+            let underflow = || {
+                error(
+                    format!(
+                        "IR stack underflow at instruction {pc} in '{}'",
+                        function.name
+                    ),
+                    span,
+                )
+            };
+            let mut next_depth = depth;
+            let mut successors = Vec::with_capacity(2);
+            match &function.instructions[pc] {
+                Instruction::Constant(_) => next_depth += 1,
+                Instruction::LoadLocal(slot) => {
+                    if *slot >= function.local_count {
+                        return Err(error(
+                            format!("invalid local slot {slot} in '{}'", function.name),
+                            span,
+                        ));
+                    }
+                    next_depth += 1;
+                }
+                Instruction::StoreLocal(slot) => {
+                    if *slot >= function.local_count {
+                        return Err(error(
+                            format!("invalid local slot {slot} in '{}'", function.name),
+                            span,
+                        ));
+                    }
+                    if depth < 1 {
+                        return Err(underflow());
+                    }
+                    next_depth -= 1;
+                }
+                Instruction::Unary(op) => {
+                    if depth < 1 {
+                        return Err(underflow());
+                    }
+                    if !matches!(op, TokenKind::Bang | TokenKind::Minus) {
+                        return Err(error("unsupported IR unary operator", span));
+                    }
+                }
+                Instruction::Binary(op) => {
+                    if depth < 2 {
+                        return Err(underflow());
+                    }
+                    if !matches!(
+                        op,
+                        TokenKind::Plus
+                            | TokenKind::Minus
+                            | TokenKind::Star
+                            | TokenKind::Slash
+                            | TokenKind::Percent
+                            | TokenKind::EqEq
+                            | TokenKind::BangEq
+                            | TokenKind::Lt
+                            | TokenKind::LtEq
+                            | TokenKind::Gt
+                            | TokenKind::GtEq
+                    ) {
+                        return Err(error("unsupported IR binary operator", span));
+                    }
+                    next_depth -= 1;
+                }
+                Instruction::Call {
+                    function: callee,
+                    arguments,
+                } => {
+                    let Some(target) = functions.get(callee.as_str()) else {
+                        return Err(error(format!("undefined IR function '{callee}'"), span));
+                    };
+                    if target.parameter_count != *arguments {
+                        return Err(error(
+                            format!("IR call to '{callee}' has incorrect argument count"),
+                            span,
+                        ));
+                    }
+                    if depth < *arguments {
+                        return Err(underflow());
+                    }
+                    next_depth = depth - arguments + 1;
+                }
+                Instruction::Print { arguments } => {
+                    if depth < *arguments {
+                        return Err(underflow());
+                    }
+                    next_depth = depth - arguments + 1;
+                }
+                Instruction::Pop => {
+                    if depth < 1 {
+                        return Err(underflow());
+                    }
+                    next_depth -= 1;
+                }
+                Instruction::Jump(target) => {
+                    successors.push(*target);
+                }
+                Instruction::JumpIfFalse(target) => {
+                    if depth < 1 {
+                        return Err(underflow());
+                    }
+                    next_depth -= 1;
+                    successors.push(*target);
+                }
+                Instruction::JumpIfFalseKeep(target) | Instruction::JumpIfTrueKeep(target) => {
+                    if depth < 1 {
+                        return Err(underflow());
+                    }
+                    successors.push(*target);
+                }
+                Instruction::Return => {
+                    if depth != 1 {
+                        return Err(error(
+                            format!(
+                                "IR return in '{}' requires exactly one stack value, found {depth}",
+                                function.name
+                            ),
+                            span,
+                        ));
+                    }
+                    continue;
+                }
+            }
+            if matches!(function.instructions[pc], Instruction::Jump(_)) {
+                // Unconditional jumps have no fallthrough edge.
+            } else {
+                successors.push(pc + 1);
+            }
+            for target in successors {
+                if target >= len {
+                    return Err(error(
+                        format!(
+                            "IR jump target {target} is out of bounds in '{}'",
+                            function.name
+                        ),
+                        span,
+                    ));
+                }
+                work.push((target, next_depth));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn error(message: impl Into<String>, span: Span) -> Diagnostic {
@@ -217,6 +426,7 @@ impl<'a> Builder<'a> {
                 Stmt::Print(value) => {
                     self.expression(value)?;
                     self.emit(Instruction::Print { arguments: 1 });
+                    self.emit(Instruction::Pop);
                 }
                 Stmt::Expr(value) => {
                     self.expression(value)?;
@@ -328,6 +538,7 @@ fn execute_internal(
     module: &ModuleIr,
     capture_output: bool,
 ) -> Result<(Value, Vec<String>), Diagnostic> {
+    validate(module)?;
     let functions: HashMap<String, FunctionIr> = module
         .functions
         .iter()
@@ -597,7 +808,79 @@ mod tests {
                 ],
             }],
         };
+        assert!(validate(&module).is_err());
         assert!(execute(&module).is_err());
+    }
+
+    #[test]
+    fn verifier_rejects_bad_frames_calls_and_control_flow() {
+        let malformed = [
+            ModuleIr {
+                functions: vec![FunctionIr {
+                    name: "main".into(),
+                    parameter_count: 1,
+                    local_count: 0,
+                    instructions: vec![Instruction::Constant(Value::Nil), Instruction::Return],
+                }],
+            },
+            ModuleIr {
+                functions: vec![FunctionIr {
+                    name: "main".into(),
+                    parameter_count: 0,
+                    local_count: 0,
+                    instructions: vec![Instruction::LoadLocal(0), Instruction::Return],
+                }],
+            },
+            ModuleIr {
+                functions: vec![FunctionIr {
+                    name: "main".into(),
+                    parameter_count: 0,
+                    local_count: 0,
+                    instructions: vec![
+                        Instruction::Call {
+                            function: "missing".into(),
+                            arguments: 0,
+                        },
+                        Instruction::Return,
+                    ],
+                }],
+            },
+            ModuleIr {
+                functions: vec![FunctionIr {
+                    name: "main".into(),
+                    parameter_count: 0,
+                    local_count: 0,
+                    instructions: vec![
+                        Instruction::Constant(Value::Nil),
+                        Instruction::Jump(9),
+                        Instruction::Return,
+                    ],
+                }],
+            },
+            ModuleIr {
+                functions: vec![FunctionIr {
+                    name: "main".into(),
+                    parameter_count: 0,
+                    local_count: 0,
+                    instructions: vec![
+                        Instruction::Constant(Value::Nil),
+                        Instruction::Constant(Value::Nil),
+                        Instruction::Return,
+                    ],
+                }],
+            },
+        ];
+        for module in malformed {
+            assert!(validate(&module).is_err());
+            assert!(execute(&module).is_err());
+        }
+    }
+
+    #[test]
+    fn verifier_accepts_lowered_programs() {
+        let module = lower_source("fn main(){let x=false&&true;if x{print(1);}else{print(2);}}")
+            .expect("program should lower");
+        validate(&module).expect("lowered IR should satisfy verifier invariants");
     }
 
     #[test]

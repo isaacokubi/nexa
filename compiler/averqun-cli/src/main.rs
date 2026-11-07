@@ -1,11 +1,13 @@
-use nexa::{
+use averqun::{
     compile,
     ir::{execute, lower},
     Interpreter, Lexer, Parser,
 };
 use std::{env, fs, process};
 fn usage() {
-    eprintln!("NEXA 0.1.0 bootstrap\nUsage: nexa <run|ir-run|check|tokens|ast|ir> <file.nexa>");
+    eprintln!(
+        "Averqun 0.1.0 bootstrap\nUsage: averqun <run|ir-run|check|tokens|ast|ir> <file.avq>"
+    );
 }
 fn main() {
     let a: Vec<String> = env::args().collect();
@@ -17,7 +19,7 @@ fn main() {
     let src = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("nexa: {e}");
+            eprintln!("averqun: {e}");
             process::exit(1)
         }
     };
