@@ -5,9 +5,11 @@ Averqun Roadmap
 - [x] Lexer, tokens, spans and diagnostics
 - [x] AST/parser for function, block, variable, return, if and expression subset
 - [x] Interpreter and initial unit tests
-- [ ] Name resolution and static type checking
+- [x] Bootstrap lexical name, scope, mutability, primitive annotation, operator, return-flow, and inferable function return checks
+- [ ] Sound type checking for all expressions; replace permissive Unknown handling and attach source spans to AST/semantic diagnostics
+- [ ] Typed HIR and multi-file/module name resolution
 - [ ] Compile-pass/compile-fail harness and diagnostic snapshots
-- [ ] Specify integer widths, overflow, float semantics, ABI and target triples
+- [ ] Specify and implement integer widths, overflow, float semantics, ABI and target triples
 - [ ] Sound ownership/borrowing model and tests
 - [ ] MIR and LLVM backend; native linking
 - [ ] Core runtime, collections, IO and platform abstraction

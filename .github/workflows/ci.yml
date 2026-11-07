@@ -19,3 +19,4 @@ jobs:
         run: |
           if cargo run -p averqun -- check tests/compile-fail/undefined.avq; then exit 1; fi
           if cargo run -p averqun -- check tests/compile-fail/type-mismatch.avq; then exit 1; fi
+          if cargo run -p averqun -- check tests/compile-fail/inferred-return-mismatch.avq; then exit 1; fi

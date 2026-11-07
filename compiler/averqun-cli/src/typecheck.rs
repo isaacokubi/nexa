@@ -70,7 +70,104 @@ impl Scope {
 #[derive(Clone)]
 struct Signature {
     params: Vec<Option<String>>,
-    ret: Option<String>,
+    inferred_ret: Type,
+}
+
+fn merge_return_type(current: Option<Type>, next: Type) -> Result<Option<Type>, Diagnostic> {
+    match current {
+        None => Ok(Some(next)),
+        Some(existing) if existing == next => Ok(Some(existing)),
+        Some(existing) if existing == Type::Unknown || next == Type::Unknown => {
+            Ok(Some(Type::Unknown))
+        }
+        Some(existing) => Err(error(format!(
+            "function returns incompatible types {existing} and {next}"
+        ))),
+    }
+}
+
+fn collect_returns(
+    body: &[Stmt],
+    scope: &mut Scope,
+    functions: &HashMap<String, Signature>,
+) -> Result<Option<Type>, Diagnostic> {
+    let mut result = None;
+    for statement in body {
+        let found = match statement {
+            Stmt::Return(value) => Some(match value {
+                Some(value) => infer(value, scope, functions)?,
+                None => Type::Nil,
+            }),
+            Stmt::Let(name, value, _) => {
+                let ty = infer(value, scope, functions)?;
+                scope.define(name.clone(), ty);
+                None
+            }
+            Stmt::TypedLet(name, annotation, value, _) => {
+                let ty = declared_type(annotation)?;
+                let actual = infer(value, scope, functions)?;
+                if actual != ty && actual != Type::Unknown {
+                    return Err(error(format!(
+                        "cannot initialize {annotation} variable '{name}' with {actual}"
+                    )));
+                }
+                scope.define(name.clone(), ty);
+                None
+            }
+            Stmt::If(condition, yes, no) => {
+                let condition_type = infer(condition, scope, functions)?;
+                if condition_type != Type::Bool && condition_type != Type::Unknown {
+                    return Err(error(format!(
+                        "if condition must be Bool, found {condition_type}"
+                    )));
+                }
+                let mut branch_scope = scope.clone();
+                branch_scope.push();
+                let yes_returns = collect_returns(yes, &mut branch_scope, functions)?;
+                let mut branch_scope = scope.clone();
+                branch_scope.push();
+                let no_returns = collect_returns(no, &mut branch_scope, functions)?;
+                let combined = match (yes_returns, no_returns) {
+                    (Some(left), Some(right)) => merge_return_type(Some(left), right)?,
+                    (left, right) => left.or(right),
+                };
+                if let Some(ty) = combined {
+                    result = merge_return_type(result, ty)?;
+                }
+                None
+            }
+            Stmt::While(condition, loop_body) => {
+                let condition_type = infer(condition, scope, functions)?;
+                if condition_type != Type::Bool && condition_type != Type::Unknown {
+                    return Err(error(format!(
+                        "while condition must be Bool, found {condition_type}"
+                    )));
+                }
+                let mut nested = scope.clone();
+                nested.push();
+                if let Some(ty) = collect_returns(loop_body, &mut nested, functions)? {
+                    result = merge_return_type(result, ty)?;
+                }
+                None
+            }
+            Stmt::Block(loop_body) => {
+                let mut nested = scope.clone();
+                nested.push();
+                if let Some(ty) = collect_returns(loop_body, &mut nested, functions)? {
+                    result = merge_return_type(result, ty)?;
+                }
+                None
+            }
+            Stmt::Assign(_, value) | Stmt::Print(value) | Stmt::Expr(value) => {
+                infer(value, scope, functions)?;
+                None
+            }
+        };
+        if let Some(ty) = found {
+            result = merge_return_type(result, ty)?;
+        }
+    }
+    Ok(result)
 }
 
 fn infer(e: &Expr, s: &Scope, fs: &HashMap<String, Signature>) -> Result<Type, Diagnostic> {
@@ -161,11 +258,7 @@ fn infer(e: &Expr, s: &Scope, fs: &HashMap<String, Signature>) -> Result<Type, D
                     }
                 }
             }
-            sig.ret
-                .as_deref()
-                .map(declared_type)
-                .transpose()
-                .map(|t| t.unwrap_or(Type::Unknown))
+            Ok(sig.inferred_ret)
         }
     }
 }
@@ -282,29 +375,65 @@ fn can_fall_through(body: &[Stmt]) -> bool {
     true
 }
 pub fn check(p: &Program) -> Result<(), Diagnostic> {
-    let fs: HashMap<String, Signature> = p
+    let mut fs: HashMap<String, Signature> = p
         .functions
         .iter()
         .map(|f| {
-            (
+            Ok((
                 f.name.clone(),
                 Signature {
                     params: f.param_types.clone(),
-                    ret: f.return_type.clone(),
+                    inferred_ret: f
+                        .return_type
+                        .as_deref()
+                        .map(declared_type)
+                        .transpose()?
+                        .unwrap_or(Type::Unknown),
                 },
-            )
+            ))
         })
-        .collect();
+        .collect::<Result<_, Diagnostic>>()?;
+
+    // Resolve straightforward inferred returns to a fixed point. Annotated
+    // signatures seed recursive calls; unannotated recursive cycles remain
+    // Unknown and are rejected below instead of weakening call-site checks.
+    for _ in 0..=p.functions.len() {
+        let mut changed = false;
+        for function in &p.functions {
+            if function.return_type.is_some() {
+                continue;
+            }
+            let mut scope = Scope::new();
+            for (name, annotation) in function.params.iter().zip(&function.param_types) {
+                let ty = annotation
+                    .as_deref()
+                    .map(declared_type)
+                    .transpose()?
+                    .unwrap_or(Type::Unknown);
+                scope.define(name.clone(), ty);
+            }
+            let inferred = collect_returns(&function.body, &mut scope, &fs)?.unwrap_or(Type::Nil);
+            if inferred != Type::Unknown && fs[&function.name].inferred_ret != inferred {
+                fs.get_mut(&function.name)
+                    .expect("function signature exists")
+                    .inferred_ret = inferred;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
     for Function {
         name,
         params,
         param_types,
-        return_type,
+        return_type: _,
         body,
         ..
     } in &p.functions
     {
-        let expected = return_type.as_deref().map(declared_type).transpose()?;
+        let expected = Some(fs[name].inferred_ret);
         let mut s = Scope::new();
         for (p, t) in params.iter().zip(param_types) {
             let ty = match t {
@@ -312,6 +441,11 @@ pub fn check(p: &Program) -> Result<(), Diagnostic> {
                 None => Type::Unknown,
             };
             s.define(p.clone(), ty);
+        }
+        if expected == Some(Type::Unknown) {
+            return Err(error(format!(
+                "in function '{name}': cannot infer return type; add an explicit return annotation"
+            )));
         }
         stmts(body, &mut s, &fs, expected)
             .map_err(|e| error(format!("in function '{name}': {}", e.message)))?;
@@ -362,6 +496,23 @@ mod tests {
     fn checks_function_return_type_at_call_sites() {
         assert!(c("fn answer()->Number{return 42;} fn main(){let n: Number=answer();}").is_ok());
         assert!(c("fn answer()->Number{return 42;} fn main(){let s: String=answer();}").is_err())
+    }
+    #[test]
+    fn infers_unannotated_return_types_and_checks_call_sites() {
+        assert!(c("fn answer(){return 42;} fn main(){let n: Number=answer();}").is_ok());
+        assert!(c("fn answer(){return 42;} fn main(){let s: String=answer();}").is_err());
+        assert!(c("fn wrapped(){return answer();} fn answer(){return 42;} fn main(){let n:Number=wrapped();}").is_ok());
+        assert!(c(
+            "fn answer(){if true{return 42;}else{return 7;}} fn main(){let n: Number=answer();}"
+        )
+        .is_ok());
+        assert!(c("fn answer(){if true{return 42;}else{return \"wrong\";}} fn main(){}").is_err());
+    }
+
+    #[test]
+    fn rejects_unresolved_inferred_return_types() {
+        assert!(c("fn identity(value){return value;} fn main(){}").is_err());
+        assert!(c("fn identity(value: Number)->Number{return value;} fn main(){let n:Number=identity(1);}").is_ok());
     }
     #[test]
     fn requires_all_paths_to_return_annotated_values() {

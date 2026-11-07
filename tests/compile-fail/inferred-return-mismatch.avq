@@ -1,0 +1,7 @@
+fn answer() {
+    return 42
+}
+
+fn main() {
+    let message: String = answer()
+}

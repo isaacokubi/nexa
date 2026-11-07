@@ -26,3 +26,5 @@ cargo run -p averqun -- run examples/hello.avq
 ```
 
 A successful bootstrap check does not establish native compilation, memory safety, or production readiness.
+
+Current state: the inferred-return type-checking milestone is in progress. It has focused unit coverage and a CLI compile-fail fixture; release readiness remains blocked by the unchecked gates above, including typed HIR, complete type soundness, native code generation, and full platform validation.

@@ -23,7 +23,7 @@ Only the bootstrap types listed above are currently implemented.
 
 ## Inference and annotations
 
-Local inference derives a binding's type from its initializer. Explicit annotations are checked against the initializer and do not silently coerce incompatible values. Function parameter and return annotations are checked against calls and return statements. Unannotated parameters and expressions can remain Unknown, so the bootstrap checker is not yet a sound, complete static type system.
+Local inference derives a binding's type from its initializer. Explicit annotations are checked against the initializer and do not silently coerce incompatible values. Function parameter annotations are checked against calls. For an unannotated function, return types are inferred from its return expressions and propagated to call sites, including through calls to other inferable functions. All returns must agree. A return depending on an unannotated parameter or an unresolved recursive return cycle remains Unknown and is rejected with a request for an explicit return annotation. This improves call-site checking but does not make the bootstrap checker a complete static type system: Unknown operands still remain in some non-return expression contexts, and semantic source spans are not yet retained.
 
 ## Operators
 
@@ -36,7 +36,7 @@ Local inference derives a binding's type from its initializer. Explicit annotati
 
 ## Return-flow analysis
 
-For an annotated non-Nil function, every path that can reach the end of the function body is rejected. A return in one conditional branch is insufficient unless the other branch also returns or a later sequential statement returns. Nested blocks are analyzed recursively. A loop is not considered a guaranteed return, even when its condition is the literal true, until the language has explicit termination analysis.
+For every function inferred or annotated to return a non-Nil value, every path that can reach the end of the function body is rejected. A return in one conditional branch is insufficient unless the other branch also returns or a later sequential statement returns. Nested blocks are analyzed recursively. A loop is not considered a guaranteed return, even when its condition is the literal true, until the language has explicit termination analysis.
 
 ## Diagnostics
 

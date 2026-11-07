@@ -1,6 +1,8 @@
 # Averqun Documentation
 
 - [Language specification](language-specification.md) — normative bootstrap subset and clearly separated planned design choices.
+- [Implementation status](IMPLEMENTATION_STATUS.md) — authoritative feature state, verification evidence, and next implementation task.
+- [Architecture](ARCHITECTURE.md), [roadmap](ROADMAP.md), [release readiness](RELEASE_READINESS.md) — canonical project planning and release records.
 - [Alternative syntax](language-specification.md#10-experimental-alternative-syntax) — implemented experimental Averqun surface grammar.
 - [Bootstrap notes](specification.md) — earlier concise implementation snapshot.
 - [Architecture](architecture.md) — compiler stages and boundaries.
