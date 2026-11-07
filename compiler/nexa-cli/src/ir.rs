@@ -18,6 +18,8 @@ pub enum Instruction {
     Pop,
     Jump(usize),
     JumpIfFalse(usize),
+    JumpIfFalseKeep(usize),
+    JumpIfTrueKeep(usize),
     Return,
 }
 
@@ -81,7 +83,7 @@ impl<'a> Builder<'a> {
     fn patch(&mut self, at: usize, target: usize, span: Span) -> Result<(), Diagnostic> {
         let instruction = self.code.get_mut(at).ok_or_else(|| error("invalid jump patch location", span))?;
         match instruction {
-            Instruction::Jump(destination) | Instruction::JumpIfFalse(destination) => {
+            Instruction::Jump(destination) | Instruction::JumpIfFalse(destination) | Instruction::JumpIfFalseKeep(destination) | Instruction::JumpIfTrueKeep(destination) => {
                 *destination = target;
                 Ok(())
             }
@@ -101,8 +103,28 @@ impl<'a> Builder<'a> {
             }
             Expr::Binary(left, operator, right) => {
                 self.expression(left)?;
-                self.expression(right)?;
-                self.emit(Instruction::Binary(operator.clone()));
+                match operator {
+                    TokenKind::AndAnd => {
+                        let end = self.code.len();
+                        self.emit(Instruction::JumpIfFalseKeep(usize::MAX));
+                        self.emit(Instruction::Pop);
+                        self.expression(right)?;
+                        let after = self.code.len();
+                        self.patch(end, after, self.function.span)?;
+                    }
+                    TokenKind::OrOr => {
+                        let end = self.code.len();
+                        self.emit(Instruction::JumpIfTrueKeep(usize::MAX));
+                        self.emit(Instruction::Pop);
+                        self.expression(right)?;
+                        let after = self.code.len();
+                        self.patch(end, after, self.function.span)?;
+                    }
+                    _ => {
+                        self.expression(right)?;
+                        self.emit(Instruction::Binary(operator.clone()));
+                    }
+                }
             }
             Expr::Call(name, arguments) => {
                 for argument in arguments { self.expression(argument)?; }
@@ -264,6 +286,15 @@ mod tests {
     fn rejects_unknown_variables_and_bad_calls() {
         assert!(lower_source("fn main(){print(missing); }").is_err());
         assert!(lower_source("fn other(){} fn main(){other(1);}").is_err());
+    }
+
+    #[test]
+    fn lowers_short_circuit_operators_without_eager_binary_ops() {
+        let module = lower_source("fn main(){let a=false && true;let b=true || false;}")
+            .expect("logical expressions should lower");
+        let code = &module.functions[0].instructions;
+        assert!(code.iter().any(|i| matches!(i, Instruction::JumpIfFalseKeep(_))));
+        assert!(code.iter().any(|i| matches!(i, Instruction::JumpIfTrueKeep(_))));
     }
 
     #[test]
