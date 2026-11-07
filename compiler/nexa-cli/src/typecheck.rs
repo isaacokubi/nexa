@@ -13,10 +13,10 @@ fn infer(e:&Expr,s:&Scope,fs:&HashMap<String,usize>)->Result<Type,Diagnostic>{
   Expr::Var(n)=>s.get(n).copied().ok_or_else(||error(format!("undefined variable '{n}'"))),
   Expr::Unary(op,x)=>{let t=infer(x,s,fs)?;match op{TokenKind::Minus if t==Type::Number=>Ok(Type::Number),TokenKind::Bang if t==Type::Bool=>Ok(Type::Bool),TokenKind::Minus=>Err(error(format!("unary '-' requires Number, found {t}"))),TokenKind::Bang=>Err(error(format!("'!' requires Bool, found {t}"))),_=>Ok(Type::Unknown)}},
   Expr::Binary(a,op,b)=>{let l=infer(a,s,fs)?;let r=infer(b,s,fs)?;use TokenKind::*;match op{
-   Plus if l==Type::Number&&r==Type::Number=>Ok(Type::Number),Plus if l==Type::String&&r==Type::String=>Ok(Type::String),Plus=>Err(error(format!("'+' requires two Numbers or two Strings; got {l} and {r}"))),
-   Minus|Star|Slash|Percent if l==Type::Number&&r==Type::Number=>Ok(Type::Number),Minus|Star|Slash|Percent=>Err(error(format!("arithmetic requires Number operands; got {l} and {r}"))),
-   Lt|LtEq|Gt|GtEq if l==Type::Number&&r==Type::Number=>Ok(Type::Bool),Lt|LtEq|Gt|GtEq=>Err(error(format!("comparison requires Number operands; got {l} and {r}"))),
-   AndAnd|OrOr if l==Type::Bool&&r==Type::Bool=>Ok(Type::Bool),AndAnd|OrOr=>Err(error(format!("logical operators require Bool operands; got {l} and {r}"))),EqEq|BangEq if l==r=>Ok(Type::Bool),EqEq|BangEq=>Err(error(format!("equality operands must have same type; got {l} and {r}"))),_=>Ok(Type::Unknown)}},
+   Plus if l==Type::Unknown||r==Type::Unknown=>Ok(Type::Unknown),Plus if l==Type::Number&&r==Type::Number=>Ok(Type::Number),Plus if l==Type::String&&r==Type::String=>Ok(Type::String),Plus=>Err(error(format!("'+' requires two Numbers or two Strings; got {l} and {r}"))),
+   Minus|Star|Slash|Percent if l==Type::Unknown||r==Type::Unknown=>Ok(Type::Unknown),Minus|Star|Slash|Percent if l==Type::Number&&r==Type::Number=>Ok(Type::Number),Minus|Star|Slash|Percent=>Err(error(format!("arithmetic requires Number operands; got {l} and {r}"))),
+   Lt|LtEq|Gt|GtEq if l==Type::Unknown||r==Type::Unknown=>Ok(Type::Bool),Lt|LtEq|Gt|GtEq if l==Type::Number&&r==Type::Number=>Ok(Type::Bool),Lt|LtEq|Gt|GtEq=>Err(error(format!("comparison requires Number operands; got {l} and {r}"))),
+   AndAnd|OrOr if l==Type::Unknown||r==Type::Unknown=>Ok(Type::Bool),AndAnd|OrOr if l==Type::Bool&&r==Type::Bool=>Ok(Type::Bool),AndAnd|OrOr=>Err(error(format!("logical operators require Bool operands; got {l} and {r}"))),EqEq|BangEq if l==Type::Unknown||r==Type::Unknown||l==r=>Ok(Type::Bool),EqEq|BangEq=>Err(error(format!("equality operands must have same type; got {l} and {r}"))),_=>Ok(Type::Unknown)}},
   Expr::Call(n,args)=>{if n=="print"{for a in args{infer(a,s,fs)?;}return Ok(Type::Nil)}let ar=fs.get(n).ok_or_else(||error(format!("undefined function '{n}'")))?;if *ar!=args.len(){return Err(error(format!("function '{n}' expects {ar} arguments, got {}",args.len())))}for a in args{infer(a,s,fs)?;}Ok(Type::Unknown)}
  }
 }
