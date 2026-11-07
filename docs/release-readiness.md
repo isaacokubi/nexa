@@ -4,7 +4,7 @@ NEXA is currently an experimental bootstrap interpreter/frontend. It is not alph
 
 ## Required gates for an alpha compiler
 - [ ] Grammar and AST fully cover the accepted language subset.
-- [ ] Static types and function signatures are represented in the AST/HIR.
+- [ ] Static types and function signatures are represented in the AST/HIR, with sound checking and accurate semantic source spans.
 - [ ] Resolver supports lexical scopes and module boundaries.
 - [ ] Ownership/borrow checker rejects unsound programs.
 - [ ] LLVM backend emits executable object files and links platform targets.
