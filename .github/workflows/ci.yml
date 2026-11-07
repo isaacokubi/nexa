@@ -12,4 +12,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
       - run: cargo build --workspace
+      - run: cargo run -p nexa -- check examples/hello.nexa
       - run: cargo run -p nexa -- run examples/hello.nexa
+      - name: Reject invalid programs
+        run: |
+          if cargo run -p nexa -- check tests/compile-fail/undefined.nexa; then exit 1; fi
+          if cargo run -p nexa -- check tests/compile-fail/type-mismatch.nexa; then exit 1; fi
