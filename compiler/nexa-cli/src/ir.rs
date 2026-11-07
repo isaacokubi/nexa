@@ -317,7 +317,7 @@ fn execute_function(
                 if stack.len() < *count {
                     return Err(error("IR stack underflow on call", span));
                 }
-                let values = stack.split_off(stack.len() - count);
+                let values = stack.split_off(stack.len() - *count);
                 let result = execute_function(callee, values, functions, fuel, depth + 1)?;
                 stack.push(result);
             }
