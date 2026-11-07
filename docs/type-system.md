@@ -23,7 +23,7 @@ Only the bootstrap types listed above are currently implemented.
 
 ## Inference and annotations
 
-Local inference derives a binding's type from its initializer. Explicit annotations are checked against the initializer and do not silently coerce incompatible values. Function parameter annotations are checked against calls. For an unannotated function, return types are inferred from its return expressions and propagated to call sites, including through calls to other inferable functions. All returns must agree. A return depending on an unannotated parameter or an unresolved recursive return cycle remains Unknown and is rejected with a request for an explicit return annotation. This improves call-site checking but does not make the bootstrap checker a complete static type system: Unknown operands still remain in some non-return expression contexts, and semantic source spans are not yet retained.
+Local inference derives a binding's type from its initializer. Explicit annotations are checked against the initializer and do not silently coerce incompatible values. Function parameter annotations are checked against calls; omitted parameter types are inferred from consistent call arguments. Uncalled parameters or conflicting callers are rejected. For an unannotated function, return types are inferred from its return expressions and propagated to call sites, including through calls to other inferable functions. All returns must agree. Unresolved recursive return cycles require an explicit return annotation. This improves call-site checking but does not make the bootstrap checker a complete static type system: `Unknown` is still tolerated in selected intermediate checks, and semantic source spans are not yet retained.
 
 ## Operators
 

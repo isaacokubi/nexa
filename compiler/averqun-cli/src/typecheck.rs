@@ -69,7 +69,7 @@ impl Scope {
 }
 #[derive(Clone)]
 struct Signature {
-    params: Vec<Option<String>>,
+    params: Vec<Type>,
     inferred_ret: Type,
 }
 
@@ -249,19 +249,125 @@ fn infer(e: &Expr, s: &Scope, fs: &HashMap<String, Signature>) -> Result<Type, D
             }
             for (a, expected) in args.iter().zip(&sig.params) {
                 let actual = infer(a, s, fs)?;
-                if let Some(name) = expected {
-                    let ty = declared_type(name)?;
-                    if actual != ty && actual != Type::Unknown {
-                        return Err(error(format!(
-                            "argument to '{n}' expects {ty}, found {actual}"
-                        )));
-                    }
+                if *expected != Type::Unknown && actual != *expected && actual != Type::Unknown {
+                    return Err(error(format!(
+                        "argument to '{n}' expects {expected}, found {actual}"
+                    )));
                 }
             }
             Ok(sig.inferred_ret)
         }
     }
 }
+
+fn collect_call_constraints_expr(
+    expression: &Expr,
+    scope: &Scope,
+    functions: &HashMap<String, Signature>,
+    constraints: &mut HashMap<(String, usize), Type>,
+) -> Result<(), Diagnostic> {
+    match expression {
+        Expr::Lit(_) | Expr::Var(_) => {}
+        Expr::Unary(_, value) => {
+            collect_call_constraints_expr(value, scope, functions, constraints)?;
+        }
+        Expr::Binary(left, _, right) => {
+            collect_call_constraints_expr(left, scope, functions, constraints)?;
+            collect_call_constraints_expr(right, scope, functions, constraints)?;
+        }
+        Expr::Call(name, arguments) => {
+            for argument in arguments {
+                collect_call_constraints_expr(argument, scope, functions, constraints)?;
+            }
+            if name == "print" {
+                return Ok(());
+            }
+            let signature = functions
+                .get(name)
+                .ok_or_else(|| error(format!("undefined function '{name}'")))?;
+            if signature.params.len() != arguments.len() {
+                return Err(error(format!(
+                    "function '{name}' expects {} arguments, got {}",
+                    signature.params.len(),
+                    arguments.len()
+                )));
+            }
+            for (index, argument) in arguments.iter().enumerate() {
+                let actual = infer(argument, scope, functions)?;
+                let declared = signature.params[index];
+                if actual != Type::Unknown {
+                    if declared != Type::Unknown && actual != declared {
+                        return Err(error(format!(
+                            "argument to '{name}' expects {declared}, found {actual}"
+                        )));
+                    }
+                    let key = (name.clone(), index);
+                    if let Some(previous) = constraints.get(&key) {
+                        if *previous != actual {
+                            return Err(error(format!(
+                                "calls to '{name}' pass incompatible types {previous} and {actual} for parameter {}",
+                                index + 1
+                            )));
+                        }
+                    } else {
+                        constraints.insert(key, actual);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_call_constraints(
+    statements: &[Stmt],
+    scope: &mut Scope,
+    functions: &HashMap<String, Signature>,
+    constraints: &mut HashMap<(String, usize), Type>,
+) -> Result<(), Diagnostic> {
+    for statement in statements {
+        match statement {
+            Stmt::Let(name, value, _) => {
+                collect_call_constraints_expr(value, scope, functions, constraints)?;
+                scope.define(name.clone(), infer(value, scope, functions)?);
+            }
+            Stmt::TypedLet(name, annotation, value, _) => {
+                collect_call_constraints_expr(value, scope, functions, constraints)?;
+                scope.define(name.clone(), declared_type(annotation)?);
+            }
+            Stmt::Assign(_, value) | Stmt::Print(value) | Stmt::Expr(value) => {
+                collect_call_constraints_expr(value, scope, functions, constraints)?;
+            }
+            Stmt::Return(value) => {
+                if let Some(value) = value {
+                    collect_call_constraints_expr(value, scope, functions, constraints)?;
+                }
+            }
+            Stmt::If(condition, yes, no) => {
+                collect_call_constraints_expr(condition, scope, functions, constraints)?;
+                let mut yes_scope = scope.clone();
+                yes_scope.push();
+                collect_call_constraints(yes, &mut yes_scope, functions, constraints)?;
+                let mut no_scope = scope.clone();
+                no_scope.push();
+                collect_call_constraints(no, &mut no_scope, functions, constraints)?;
+            }
+            Stmt::While(condition, body) => {
+                collect_call_constraints_expr(condition, scope, functions, constraints)?;
+                let mut loop_scope = scope.clone();
+                loop_scope.push();
+                collect_call_constraints(body, &mut loop_scope, functions, constraints)?;
+            }
+            Stmt::Block(body) => {
+                let mut nested = scope.clone();
+                nested.push();
+                collect_call_constraints(body, &mut nested, functions, constraints)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn declared_type(name: &str) -> Result<Type, Diagnostic> {
     match name {
         "Number" => Ok(Type::Number),
@@ -382,7 +488,17 @@ pub fn check(p: &Program) -> Result<(), Diagnostic> {
             Ok((
                 f.name.clone(),
                 Signature {
-                    params: f.param_types.clone(),
+                    params: f
+                        .param_types
+                        .iter()
+                        .map(|annotation| {
+                            annotation
+                                .as_deref()
+                                .map(declared_type)
+                                .transpose()
+                                .map(|ty| ty.unwrap_or(Type::Unknown))
+                        })
+                        .collect::<Result<_, _>>()?,
                     inferred_ret: f
                         .return_type
                         .as_deref()
@@ -394,23 +510,42 @@ pub fn check(p: &Program) -> Result<(), Diagnostic> {
         })
         .collect::<Result<_, Diagnostic>>()?;
 
-    // Resolve straightforward inferred returns to a fixed point. Annotated
-    // signatures seed recursive calls; unannotated recursive cycles remain
-    // Unknown and are rejected below instead of weakening call-site checks.
-    for _ in 0..=p.functions.len() {
+    // Infer unannotated parameters from known call arguments and resolve
+    // unannotated returns to a fixed point. Recursive cycles without an
+    // annotation remain Unknown and are rejected rather than weakening checks.
+    for _ in 0..=(2 * p.functions.len()) {
         let mut changed = false;
+        let mut constraints = HashMap::new();
+        for function in &p.functions {
+            let mut scope = Scope::new();
+            for (index, name) in function.params.iter().enumerate() {
+                scope.define(name.clone(), fs[&function.name].params[index]);
+            }
+            collect_call_constraints(&function.body, &mut scope, &fs, &mut constraints)?;
+        }
+        for ((function, index), ty) in constraints {
+            let parameter = &mut fs
+                .get_mut(&function)
+                .expect("resolved call target has a signature")
+                .params[index];
+            if *parameter == Type::Unknown {
+                *parameter = ty;
+                changed = true;
+            } else if *parameter != ty {
+                return Err(error(format!(
+                    "calls to '{function}' pass incompatible types {} and {ty} for parameter {}",
+                    *parameter,
+                    index + 1
+                )));
+            }
+        }
         for function in &p.functions {
             if function.return_type.is_some() {
                 continue;
             }
             let mut scope = Scope::new();
-            for (name, annotation) in function.params.iter().zip(&function.param_types) {
-                let ty = annotation
-                    .as_deref()
-                    .map(declared_type)
-                    .transpose()?
-                    .unwrap_or(Type::Unknown);
-                scope.define(name.clone(), ty);
+            for (index, name) in function.params.iter().enumerate() {
+                scope.define(name.clone(), fs[&function.name].params[index]);
             }
             let inferred = collect_returns(&function.body, &mut scope, &fs)?.unwrap_or(Type::Nil);
             if inferred != Type::Unknown && fs[&function.name].inferred_ret != inferred {
@@ -427,7 +562,7 @@ pub fn check(p: &Program) -> Result<(), Diagnostic> {
     for Function {
         name,
         params,
-        param_types,
+        param_types: _,
         return_type: _,
         body,
         ..
@@ -435,12 +570,14 @@ pub fn check(p: &Program) -> Result<(), Diagnostic> {
     {
         let expected = Some(fs[name].inferred_ret);
         let mut s = Scope::new();
-        for (p, t) in params.iter().zip(param_types) {
-            let ty = match t {
-                Some(name) => declared_type(name)?,
-                None => Type::Unknown,
-            };
-            s.define(p.clone(), ty);
+        for (index, parameter) in params.iter().enumerate() {
+            let ty = fs[name].params[index];
+            if ty == Type::Unknown {
+                return Err(error(format!(
+                    "in function '{name}': cannot infer type of parameter '{parameter}'; add an annotation or call the function with a typed value"
+                )));
+            }
+            s.define(parameter.clone(), ty);
         }
         if expected == Some(Type::Unknown) {
             return Err(error(format!(
@@ -507,6 +644,16 @@ mod tests {
         )
         .is_ok());
         assert!(c("fn answer(){if true{return 42;}else{return \"wrong\";}} fn main(){}").is_err());
+    }
+
+    #[test]
+    fn infers_unannotated_parameters_from_calls() {
+        assert!(c("fn double(value){return value*2;} fn main(){let n:Number=double(3);}").is_ok());
+        assert!(c("fn relay(value){return answer(value);} fn answer(x:Number)->Number{return x;} fn main(){let n:Number=relay(4);}").is_ok());
+        assert!(
+            c("fn consume(value){print(value);} fn main(){consume(1);consume(\"one\");}").is_err()
+        );
+        assert!(c("fn never_called(value){print(value);} fn main(){}").is_err());
     }
 
     #[test]

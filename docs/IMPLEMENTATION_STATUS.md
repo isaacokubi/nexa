@@ -73,9 +73,17 @@ This status is tied to the current repository branch and must not be confused wi
 | Interpreter | TESTED | Basic semantics and resource bounds; aggregates/closures/errors absent |
 | Native backend, modules, package manager, standard library, concurrency, tooling | NOT STARTED | See release gates and roadmap |
 
+## Type-system milestone: parameter inference (2026-11-07)
+- Function signatures now represent resolved parameter types rather than syntax annotations alone. Omitted parameter types are inferred from known call arguments across the program alongside return-type inference.
+- Constraint propagation runs to a fixed point so wrappers and call graphs with forward declarations can pass inferred types through multiple functions.
+- Parameters without any inferable call type, and parameters called with conflicting concrete types, are rejected. Inferred parameters are used while checking each function body and at call sites.
+- Added tests for inferred arithmetic parameters, forward/cross-function propagation, conflicting callers, and unresolved uncalled parameters.
+- Verification: formatting, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (39 tests), Clippy with warnings denied, and `git diff --check` passed. Both examples ran through interpreter and IR VM; all three compile-fail fixtures were rejected by the CLI.
+- Latest commit is `47ee8a4`; parameter inference is uncommitted.
+
 ## Next implementation task
 
-Infer unannotated parameter types from call sites where possible, then reject unresolved `Unknown` values in type-sensitive contexts and add source spans to typed AST/HIR diagnostics. Continue with a typed HIR boundary before expanding language syntax.
+Reject every unresolved `Unknown` value in type-sensitive contexts, then add source spans to typed AST/HIR diagnostics. Continue with a typed HIR boundary before expanding language syntax.
 
 ## Accuracy rule
 A feature is considered implemented only when code, tests, documentation, and a verified CI/build result support the claim. Roadmap completion is not a substitute for these artifacts.
