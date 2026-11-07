@@ -21,7 +21,7 @@ The type checker infers omitted parameter types from consistent call arguments a
 
 Engineering constraints
 ----------------------
-- The recursive-descent parser bounds recursive expression/unary and nested-block parsing to 128 levels. The public parser constructor supplies EOF when an external token stream omits it.
+- The recursive-descent parser bounds recursive expression/unary and nested-block parsing to 128 levels and each same-precedence operator chain to 128 operators. The public parser constructor supplies EOF when an external token stream omits it.
 - Diagnostics retain byte offsets and 1-based line/column.
 - Compiler phases are independently testable.
 - Target triples, runtime ABI and language semantics require versioning.

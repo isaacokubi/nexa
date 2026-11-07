@@ -427,6 +427,7 @@ pub struct Parser {
     nesting: usize,
 }
 const MAX_PARSE_NESTING: usize = 128;
+const MAX_OPERATOR_CHAIN: usize = 128;
 impl Parser {
     pub fn new(mut t: Vec<Token>) -> Self {
         if !t.iter().any(|token| matches!(token.kind, TokenKind::Eof)) {
@@ -703,9 +704,17 @@ impl Parser {
         ops: &[TokenKind],
     ) -> Result<Expr, Diagnostic> {
         let mut e = next(self)?;
+        let mut operators = 0;
         loop {
             let o = ops.iter().find(|k| self.check(k)).cloned();
             if let Some(o) = o {
+                if operators == MAX_OPERATOR_CHAIN {
+                    return Err(Diagnostic {
+                        message: format!("operator chain limit ({MAX_OPERATOR_CHAIN}) exceeded"),
+                        span: self.cur().span,
+                    });
+                }
+                operators += 1;
                 self.adv();
                 let r = next(self)?;
                 let span = cover(e.span(), r.span());
@@ -1298,6 +1307,12 @@ mod tests {
         );
         let diagnostic = compile(&source).unwrap_err();
         assert!(diagnostic.message.contains("parser nesting limit"));
+    }
+    #[test]
+    fn parser_bounds_left_nested_operator_chains() {
+        let source = format!("fn main(){{print({});}}", vec!["1"; 1024].join("+"));
+        let diagnostic = compile(&source).unwrap_err();
+        assert!(diagnostic.message.contains("operator chain limit"));
     }
     #[test]
     fn parser_rejects_excessive_block_nesting_without_panicking() {

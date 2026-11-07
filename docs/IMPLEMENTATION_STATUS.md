@@ -99,11 +99,11 @@ This status is tied to the current repository branch and must not be confused wi
 Add precise spans to declaration/assignment/function diagnostics, then introduce a typed HIR boundary with resolved primitive type identities before expanding language syntax.
 
 ## Parser safety milestone (2026-11-07)
-- Added a 128-level recursion limit for nested expressions/unary operators and nested blocks. Excess depth produces a source-positioned diagnostic rather than risking process stack exhaustion.
+- Added a 128-level recursion limit for nested expressions/unary operators and nested blocks, plus a 128-operator per-precedence chain limit to bound left-nested AST depth. Excess input produces a source-positioned diagnostic rather than risking process stack exhaustion in later compiler passes.
 - `Parser::new` now appends EOF for external token streams that omit it, and the parser handles an empty token vector without indexing or panicking.
-- Added tests for both depth limits and EOF normalization.
-- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (46 passed), `cargo clippy --workspace --all-targets -- -D warnings`, `git diff --check`, and both examples via `run` and `ir-run` passed.
-- Committed as `b780540` (`fix(parser): bound recursive parsing depth`) and pushed to `origin/feat/compiler-foundation`.
+- Added tests for all depth limits and EOF normalization.
+- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (47 passed), `cargo clippy --workspace --all-targets -- -D warnings`, `git diff --check`, and both examples via `run` and `ir-run` passed.
+- Recursive-depth/EOF work is committed as `b780540`; operator-chain work is complete but pending its checkpoint commit.
 - Next: improve semantic declaration spans and introduce typed HIR. Native backend, full types, ownership, modules/packages, standard library, async, tooling, fuzzing, and releases remain incomplete.
 
 ## Accuracy rule

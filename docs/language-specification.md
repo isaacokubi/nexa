@@ -18,7 +18,7 @@ The lexer reports the starting byte offset, 1-based line, and 1-based column for
 
 ## 2. Grammar
 
-The parser rejects recursive expression/unary nesting and nested blocks deeper than 128 levels with a diagnostic. This limit applies to both accepted syntax forms.
+The parser rejects recursive expression/unary nesting and nested blocks deeper than 128 levels, as well as same-precedence operator chains longer than 128 operators, with a diagnostic. These limits apply to both accepted syntax forms.
 
 The grammar below captures the accepted parser subset. A semicolon is optional after variable declarations, returns, assignments, and expression statements. It is not a statement separator requirement; adjacent statements are recognized by their grammar.
 
