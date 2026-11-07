@@ -106,13 +106,16 @@ fn collect_returns(
                 Some(value) => infer(value, scope, functions)?,
                 None => Type::Nil,
             }),
-            Stmt::Let(name, value, _) => {
+            Stmt::Let(name, value, _, _) => {
                 let ty = infer(value, scope, functions)?;
                 scope.define(name.clone(), ty);
                 None
             }
-            Stmt::TypedLet(name, annotation, value, _) => {
-                let ty = declared_type(annotation)?;
+            Stmt::TypedLet(name, annotation, value, _, declaration_span) => {
+                let ty = declared_type(annotation).map_err(|mut diagnostic| {
+                    diagnostic.span = *declaration_span;
+                    diagnostic
+                })?;
                 let actual = infer(value, scope, functions)?;
                 if actual != ty && actual != Type::Unknown {
                     return Err(error_at(
@@ -169,7 +172,7 @@ fn collect_returns(
                 }
                 None
             }
-            Stmt::Assign(_, value) | Stmt::Print(value) | Stmt::Expr(value) => {
+            Stmt::Assign(_, value, _) | Stmt::Print(value) | Stmt::Expr(value) => {
                 infer(value, scope, functions)?;
                 None
             }
@@ -383,15 +386,19 @@ fn collect_call_constraints(
 ) -> Result<(), Diagnostic> {
     for statement in statements {
         match statement {
-            Stmt::Let(name, value, _) => {
+            Stmt::Let(name, value, _, _) => {
                 collect_call_constraints_expr(value, scope, functions, constraints)?;
                 scope.define(name.clone(), infer(value, scope, functions)?);
             }
-            Stmt::TypedLet(name, annotation, value, _) => {
+            Stmt::TypedLet(name, annotation, value, _, declaration_span) => {
                 collect_call_constraints_expr(value, scope, functions, constraints)?;
-                scope.define(name.clone(), declared_type(annotation)?);
+                let ty = declared_type(annotation).map_err(|mut diagnostic| {
+                    diagnostic.span = *declaration_span;
+                    diagnostic
+                })?;
+                scope.define(name.clone(), ty);
             }
-            Stmt::Assign(_, value) | Stmt::Print(value) | Stmt::Expr(value) => {
+            Stmt::Assign(_, value, _) | Stmt::Print(value) | Stmt::Expr(value) => {
                 collect_call_constraints_expr(value, scope, functions, constraints)?;
             }
             Stmt::Return(value) => {
@@ -441,8 +448,11 @@ fn stmts(
 ) -> Result<(), Diagnostic> {
     for x in b {
         match x {
-            Stmt::TypedLet(n, name, e, _) => {
-                let expected = declared_type(name)?;
+            Stmt::TypedLet(n, name, e, _, declaration_span) => {
+                let expected = declared_type(name).map_err(|mut diagnostic| {
+                    diagnostic.span = *declaration_span;
+                    diagnostic
+                })?;
                 let actual = validate_expression(e, s, fs)?;
                 if actual != expected {
                     return Err(error_at(
@@ -451,7 +461,10 @@ fn stmts(
                     ));
                 }
                 if s.contains_current(n) {
-                    return Err(error(format!("'{n}' already declared in this scope")));
+                    return Err(error_at(
+                        *declaration_span,
+                        format!("'{n}' already declared in this scope"),
+                    ));
                 }
                 s.define(n.clone(), expected);
             }
@@ -465,7 +478,7 @@ fn stmts(
                 }
                 scoped_stmts(b, s, fs, ret)?;
             }
-            Stmt::Let(n, e, _) => {
+            Stmt::Let(n, e, _, declaration_span) => {
                 let t = validate_expression(e, s, fs)?;
                 if t == Type::Unknown {
                     return Err(error_at(
@@ -474,14 +487,17 @@ fn stmts(
                     ));
                 }
                 if s.contains_current(n) {
-                    return Err(error(format!("'{n}' already declared in this scope")));
+                    return Err(error_at(
+                        *declaration_span,
+                        format!("'{n}' already declared in this scope"),
+                    ));
                 }
                 s.define(n.clone(), t);
             }
-            Stmt::Assign(n, e) => {
-                let old = s
-                    .get(n)
-                    .ok_or_else(|| error(format!("undefined variable '{n}'")))?;
+            Stmt::Assign(n, e, assignment_span) => {
+                let old = s.get(n).ok_or_else(|| {
+                    error_at(*assignment_span, format!("undefined variable '{n}'"))
+                })?;
                 let new = validate_expression(e, s, fs)?;
                 if old != new {
                     return Err(error_at(
@@ -717,6 +733,20 @@ mod tests {
         let diagnostic = c("fn main() {\n  let n: Number = \"bad\"\n}").unwrap_err();
         assert_eq!(diagnostic.span.line, 2);
         assert_eq!(diagnostic.span.column, 19);
+    }
+    #[test]
+    fn declaration_and_assignment_type_errors_retain_statement_locations() {
+        let duplicate = c("fn main() {\n  let item = 1\n  let item = 2\n}").unwrap_err();
+        assert_eq!((duplicate.span.line, duplicate.span.column), (3, 7));
+
+        let undefined = c("fn main() {\n  missing = 1\n}").unwrap_err();
+        assert_eq!((undefined.span.line, undefined.span.column), (2, 3));
+
+        let immutable = crate::compile("fn main() {\n  let fixed = 1\n  fixed = 2\n}").unwrap_err();
+        assert_eq!((immutable.span.line, immutable.span.column), (3, 3));
+
+        let unknown_type = c("fn main() {\n  let value: Missing = 1\n}").unwrap_err();
+        assert_eq!((unknown_type.span.line, unknown_type.span.column), (2, 7));
     }
     #[test]
     fn checks_function_return_type_at_call_sites() {

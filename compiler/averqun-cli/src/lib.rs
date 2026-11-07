@@ -399,9 +399,9 @@ impl Expr {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     While(Expr, Vec<Stmt>),
-    Let(String, Expr, bool),
-    TypedLet(String, String, Expr, bool),
-    Assign(String, Expr),
+    Let(String, Expr, bool, Span),
+    TypedLet(String, String, Expr, bool, Span),
+    Assign(String, Expr, Span),
     Print(Expr),
     Expr(Expr),
     Return(Option<Expr>),
@@ -597,6 +597,7 @@ impl Parser {
         };
         if let Some(m) = mutable {
             let t = self.expect(&TokenKind::Ident(String::new()), "expected variable name")?;
+            let declaration_span = t.span;
             let n = if let TokenKind::Ident(x) = t.kind {
                 x
             } else {
@@ -621,9 +622,9 @@ impl Parser {
             let e = self.expr()?;
             self.eat(&TokenKind::Semi);
             return Ok(if let Some(t) = annotation {
-                Stmt::TypedLet(n, t, e, m)
+                Stmt::TypedLet(n, t, e, m, declaration_span)
             } else {
-                Stmt::Let(n, e, m)
+                Stmt::Let(n, e, m, declaration_span)
             });
         }
         if self.eat(&TokenKind::While) {
@@ -674,7 +675,7 @@ impl Parser {
             if self.eat(&TokenKind::Eq) || self.eat(&TokenKind::ColonEq) {
                 let v = self.expr()?;
                 self.eat(&TokenKind::Semi);
-                return Ok(Stmt::Assign(name, v));
+                return Ok(Stmt::Assign(name, v, x.span()));
             }
             self.eat(&TokenKind::Semi);
             return Ok(Stmt::Expr(Expr::Var(name, x.span())));
@@ -952,9 +953,12 @@ impl Interpreter {
             }
             self.fuel -= 1;
             match s {
-                Stmt::TypedLet(n, _, x, m) => {
+                Stmt::TypedLet(n, _, x, m, declaration_span) => {
                     if e.contains_current(n) {
-                        return Err(diag("", format!("'{n}' already declared")));
+                        return Err(Diagnostic {
+                            message: format!("'{n}' already declared"),
+                            span: *declaration_span,
+                        });
                     }
                     let v = self.eval(x, e)?;
                     e.define(n.clone(), v, *m);
@@ -970,16 +974,24 @@ impl Interpreter {
                         }
                     }
                 }
-                Stmt::Let(n, x, m) => {
+                Stmt::Let(n, x, m, declaration_span) => {
                     if e.contains_current(n) {
-                        return Err(diag("", format!("'{n}' already declared")));
+                        return Err(Diagnostic {
+                            message: format!("'{n}' already declared"),
+                            span: *declaration_span,
+                        });
                     }
                     let v = self.eval(x, e)?;
                     e.define(n.clone(), v, *m);
                 }
-                Stmt::Assign(n, x) => {
+                Stmt::Assign(n, x, assignment_span) => {
                     let v = self.eval(x, e)?;
-                    e.assign(n, v)?
+                    e.assign(n, v).map_err(|mut error| {
+                        if has_placeholder_span(error.span) {
+                            error.span = *assignment_span;
+                        }
+                        error
+                    })?
                 }
                 Stmt::Print(x) => {
                     let line = self.eval(x, e)?;
@@ -1205,9 +1217,12 @@ fn check_stmts(
 ) -> Result<(), Diagnostic> {
     for s in stmts {
         match s {
-            Stmt::TypedLet(n, _, x, m) => {
+            Stmt::TypedLet(n, _, x, m, declaration_span) => {
                 if env.contains_current(n) {
-                    return Err(diag("", format!("'{n}' already declared in this scope")));
+                    return Err(Diagnostic {
+                        message: format!("'{n}' already declared in this scope"),
+                        span: *declaration_span,
+                    });
                 }
                 check_expr(x, env, fns)?;
                 env.define(n.clone(), *m);
@@ -1216,22 +1231,26 @@ fn check_stmts(
                 check_expr(c, env, fns)?;
                 check_scoped(b, env, fns)?;
             }
-            Stmt::Let(n, x, m) => {
+            Stmt::Let(n, x, m, declaration_span) => {
                 if env.contains_current(n) {
-                    return Err(diag("", format!("'{n}' already declared in this scope")));
+                    return Err(Diagnostic {
+                        message: format!("'{n}' already declared in this scope"),
+                        span: *declaration_span,
+                    });
                 }
                 check_expr(x, env, fns)?;
                 env.define(n.clone(), *m);
             }
-            Stmt::Assign(n, x) => {
-                let m = env
-                    .get(n)
-                    .ok_or_else(|| diag("", format!("undefined variable '{n}'")))?;
+            Stmt::Assign(n, x, assignment_span) => {
+                let m = env.get(n).ok_or_else(|| Diagnostic {
+                    message: format!("undefined variable '{n}'"),
+                    span: *assignment_span,
+                })?;
                 if !m {
-                    return Err(diag(
-                        "",
-                        format!("cannot assign to immutable variable '{n}'"),
-                    ));
+                    return Err(Diagnostic {
+                        message: format!("cannot assign to immutable variable '{n}'"),
+                        span: *assignment_span,
+                    });
                 }
                 check_expr(x, env, fns)?;
             }

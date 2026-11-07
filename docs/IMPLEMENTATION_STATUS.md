@@ -104,7 +104,12 @@ Add precise spans to declaration/assignment/function diagnostics, then introduce
 - Added tests for all depth limits and EOF normalization.
 - Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (47 passed), `cargo clippy --workspace --all-targets -- -D warnings`, `git diff --check`, and both examples via `run` and `ir-run` passed.
 - Recursive-depth/EOF work is committed as `b780540`; operator-chain work is complete but pending its checkpoint commit.
-- Next: improve semantic declaration spans and introduce typed HIR. Native backend, full types, ownership, modules/packages, standard library, async, tooling, fuzzing, and releases remain incomplete.
+- Next: introduce typed HIR with stable resolved primitive type identities. Native backend, full types, ownership, modules/packages, standard library, async, tooling, fuzzing, and releases remain incomplete.
+
+## Declaration diagnostic spans (2026-11-07)
+- Declaration names and assignment targets now carry spans in the AST. Duplicate bindings, invalid type annotations, unresolved assignment targets, and immutable assignment errors report those locations in static checks and interpreter execution.
+- Added exact line/column regression checks for these diagnostics, including annotation errors raised during fixed-point inference.
+- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (48 passed), Clippy with warnings denied, `git diff --check`, and both examples via `run` and `ir-run` passed. This work is currently uncommitted.
 
 ## Accuracy rule
 A feature is considered implemented only when code, tests, documentation, and a verified CI/build result support the claim. Roadmap completion is not a substitute for these artifacts.

@@ -17,7 +17,7 @@ source → lexer → parser → AST → name resolution → typed HIR → owners
 
 Safety analyses must precede code generation. LLVM is an optimization/backend tool, not a performance guarantee; equivalent workloads must be benchmarked against C and Rust.
 
-The type checker infers omitted parameter types from consistent call arguments and unannotated return types from consistent return expressions, propagates both through the call graph, and rejects unresolved types before final body checking. Expression AST nodes retain byte/line/column spans. Type errors, interpreter errors, lowering errors, and IR runtime failures use those spans. Declaration and function-level errors are not yet consistently precise. The current typed layer is still limited to four primitive types and is not a complete general-purpose type system.
+The type checker infers omitted parameter types from consistent call arguments and unannotated return types from consistent return expressions, propagates both through the call graph, and rejects unresolved types before final body checking. Expression AST nodes retain byte/line/column spans, and variable declarations and assignment targets now retain spans through semantic and runtime checks. Function-level and parameter-annotation errors are not yet consistently precise. The current typed layer is still limited to four primitive types and is not a complete general-purpose type system.
 
 Engineering constraints
 ----------------------

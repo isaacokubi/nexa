@@ -444,12 +444,12 @@ impl<'a> Builder<'a> {
     fn statements(&mut self, statements: &[Stmt]) -> Result<(), Diagnostic> {
         for statement in statements {
             match statement {
-                Stmt::Let(name, value, _) | Stmt::TypedLet(name, _, value, _) => {
+                Stmt::Let(name, value, _, _) | Stmt::TypedLet(name, _, value, _, _) => {
                     self.expression(value)?;
                     let slot = self.locals.define(name, self.function.span)?;
                     self.emit(Instruction::StoreLocal(slot));
                 }
-                Stmt::Assign(name, value) => {
+                Stmt::Assign(name, value, _) => {
                     let slot = self.locals.resolve(name, self.function.span)?;
                     self.expression(value)?;
                     self.emit(Instruction::StoreLocal(slot));
