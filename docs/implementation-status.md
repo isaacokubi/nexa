@@ -10,14 +10,14 @@ This status is tied to the current repository branch and must not be confused wi
 - Variables, assignment, blocks, returns, conditionals.
 - Primitive values and interpreter.
 - Basic semantic checks (function existence/arity, names, mutability, main entry).
-- Static primitive inference/operator validation in `typecheck.rs`, including typed local declarations, parameters, call arguments, explicit return types and all-path return checks for annotated non-Nil functions.
+- Static primitive inference/operator validation in `typecheck.rs`, including typed local declarations, parameters, call arguments, explicit return types and conservative all-path return-flow checks for annotated non-Nil functions.
 - Runtime and static-checker lexical scopes for blocks, conditional branches and loop iterations, including legal inner-block shadowing and outer mutable binding updates.
 - Target-independent stack IR lowering with local slots, calls, print, arithmetic, short-circuit branches, conditional/loop jumps and returns.
 - CLI commands `run`, `check`, `tokens`, `ast`, and `ir`.
 - Unit tests and hello example.
 
 ## Not implemented
-- Declared type AST/HIR and complete signature/return checking.
+- Declared type AST/HIR and a complete, sound static type system; bootstrap Unknown inference and source-span propagation remain limited.
 - Integer widths, overflow modes, generics, traits, structs, enums, pattern matching.
 - Ownership/borrow/lifetime checking and destructor semantics.
 - Full typed MIR, optimization pipeline, IR execution engine, LLVM backend, object/executable emission.
