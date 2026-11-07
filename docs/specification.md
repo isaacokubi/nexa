@@ -22,7 +22,7 @@ Grammar subset
     block        = "{", {statement}, "}"
     statement    = ("let"|"var"), identifier, [":",identifier], "=", expression
                  | "return", [expression] | "if", expression, block, ["else",(block|statement)]
-                 | block | expression
+                 | "while", expression, block | block | expression
     expression   = logical/equality/comparison/additive/multiplicative/unary/primary precedence
     primary      = number|string|true|false|nil|identifier|call|"(",expression,")"
 
