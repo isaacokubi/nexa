@@ -9,7 +9,10 @@ Current features
 - Recursive-descent parser and AST for functions, optionally typed parameters, blocks, let/var (including checked local, parameter and return type annotations), return, if/else, while loops, calls and expressions
 - Interpreter: numbers, strings, booleans, nil, arithmetic, comparisons and short-circuit logic
 - CLI: `nexa run|check|tokens|ast FILE`
-- Bootstrap static expression type checks (operator operands, assignment consistency where inferred, Boolean conditions)\n- Unit tests
+- Bootstrap static type checks for primitive operators, declarations, parameters, call arguments and return annotations
+- Lexical block scopes with shadowing boundaries and assignment to visible outer mutable bindings
+- All-path return checking for explicitly annotated non-Nil functions
+- Unit tests
 
 Build and test (Rust stable)
 ---------------------------
