@@ -13,7 +13,7 @@ Lexical rules (implemented)
 - Whitespace ignored; `//` comments to newline.
 - Decimal integer/fractional numbers currently represented as f64.
 - Double-quoted strings: `\\n`, `\\r`, `\\t`, `\\"`, `\\\\` escapes.
-- Keywords: fn, let, var, return, if, else, true, false, nil, print, module.
+- Keywords: fn, let, var, return, if, else, true, false, nil, print, module, while.
 
 Grammar subset
 -------------
@@ -34,8 +34,8 @@ Implemented semantics
 - Arithmetic is numeric; plus also concatenates two strings.
 - Division/modulo by zero reports an error.
 - print(expr) writes one value per line.
-- One-million statement execution fuel guards runaway programs.
+- One-million execution fuel guards runaway statements and loop iterations; recursive calls have a bounded depth.\n- Bootstrap primitive type inference checks arithmetic, comparisons, logical operators, Boolean conditions, local annotations (`Number`, `String`, `Bool`, `Nil`) and inferred assignments. This is not yet a sound whole-program type system.
 
 Not implemented
 --------------
-Static type checking/inference, structs/enums/traits/generics, ownership/borrowing, loops, arrays/maps, closures, async/concurrency, imports, LLVM/native code, package manager, formatter, debugger and language server.
+Complete static type checking and function signature typing, structs/enums/traits/generics, ownership/borrowing, arrays/maps, closures, async/concurrency, imports, LLVM/native code, package manager, formatter, debugger and language server.
