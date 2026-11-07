@@ -13,6 +13,7 @@ This status is tied to the current repository branch and must not be confused wi
 - Static primitive inference/operator validation in `typecheck.rs`, including typed local declarations, parameters, call arguments, explicit return types and conservative all-path return-flow checks for annotated non-Nil functions.
 - Runtime and static-checker lexical scopes for blocks, conditional branches and loop iterations, including legal inner-block shadowing and outer mutable binding updates.
 - Target-independent stack IR lowering with local slots, calls, print, arithmetic, short-circuit branches, conditional/loop jumps and returns.
+- Executable reference IR virtual machine with local frames, function calls, stack checks, jump validation, execution fuel and recursion-depth limits.
 - CLI commands `run`, `check`, `tokens`, `ast`, and `ir`.
 - Unit tests and hello example.
 
