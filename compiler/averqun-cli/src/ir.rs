@@ -3,7 +3,9 @@
 //! This is a stable boundary between the source AST and future optimization /
 //! native backends. Instructions are deliberately target-independent.
 
-use crate::{Diagnostic, Expr, Function, Program, Span, Stmt, TokenKind, Value};
+use crate::{
+    has_placeholder_span, Diagnostic, Expr, Function, Program, Span, Stmt, TokenKind, Value,
+};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +31,7 @@ pub struct FunctionIr {
     pub parameter_count: usize,
     pub local_count: u32,
     pub instructions: Vec<Instruction>,
+    pub instruction_spans: Vec<Span>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -65,6 +68,15 @@ pub fn validate(module: &ModuleIr) -> Result<(), Diagnostic> {
         if function.instructions.is_empty() {
             return Err(error(
                 format!("IR function '{}' has no instructions", function.name),
+                span,
+            ));
+        }
+        if function.instruction_spans.len() != function.instructions.len() {
+            return Err(error(
+                format!(
+                    "IR function '{}' has incomplete source locations",
+                    function.name
+                ),
                 span,
             ));
         }
@@ -251,6 +263,12 @@ fn error(message: impl Into<String>, span: Span) -> Diagnostic {
         span,
     }
 }
+fn locate(mut diagnostic: Diagnostic, span: Span) -> Diagnostic {
+    if has_placeholder_span(diagnostic.span) {
+        diagnostic.span = span;
+    }
+    diagnostic
+}
 
 #[derive(Default)]
 struct Locals {
@@ -301,6 +319,8 @@ struct Builder<'a> {
     function: &'a Function,
     locals: Locals,
     code: Vec<Instruction>,
+    spans: Vec<Span>,
+    current_span: Span,
     functions: &'a HashMap<String, usize>,
 }
 impl<'a> Builder<'a> {
@@ -316,11 +336,14 @@ impl<'a> Builder<'a> {
             function,
             locals,
             code: Vec::new(),
+            spans: Vec::new(),
+            current_span: function.span,
             functions,
         })
     }
     fn emit(&mut self, instruction: Instruction) {
         self.code.push(instruction);
+        self.spans.push(self.current_span);
     }
     fn patch(&mut self, at: usize, target: usize, span: Span) -> Result<(), Diagnostic> {
         let instruction = self
@@ -339,17 +362,24 @@ impl<'a> Builder<'a> {
         }
     }
     fn expression(&mut self, expression: &Expr) -> Result<(), Diagnostic> {
+        let previous = self.current_span;
+        self.current_span = expression.span();
+        let result = self.expression_inner(expression);
+        self.current_span = previous;
+        result
+    }
+    fn expression_inner(&mut self, expression: &Expr) -> Result<(), Diagnostic> {
         match expression {
-            Expr::Lit(value) => self.emit(Instruction::Constant(value.clone())),
-            Expr::Var(name) => {
-                let slot = self.locals.resolve(name, self.function.span)?;
+            Expr::Lit(value, _) => self.emit(Instruction::Constant(value.clone())),
+            Expr::Var(name, span) => {
+                let slot = self.locals.resolve(name, *span)?;
                 self.emit(Instruction::LoadLocal(slot));
             }
-            Expr::Unary(operator, value) => {
+            Expr::Unary(operator, value, _) => {
                 self.expression(value)?;
                 self.emit(Instruction::Unary(operator.clone()));
             }
-            Expr::Binary(left, operator, right) => {
+            Expr::Binary(left, operator, right, _) => {
                 self.expression(left)?;
                 match operator {
                     TokenKind::AndAnd => {
@@ -374,7 +404,7 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
-            Expr::Call(name, arguments) => {
+            Expr::Call(name, arguments, span) => {
                 for argument in arguments {
                     self.expression(argument)?;
                 }
@@ -383,16 +413,17 @@ impl<'a> Builder<'a> {
                         arguments: arguments.len(),
                     });
                 } else {
-                    let expected = self.functions.get(name).ok_or_else(|| {
-                        error(format!("undefined function '{name}'"), self.function.span)
-                    })?;
+                    let expected = self
+                        .functions
+                        .get(name)
+                        .ok_or_else(|| error(format!("undefined function '{name}'"), *span))?;
                     if *expected != arguments.len() {
                         return Err(error(
                             format!(
                                 "function '{name}' expects {expected} arguments, got {}",
                                 arguments.len()
                             ),
-                            self.function.span,
+                            *span,
                         ));
                     }
                     self.emit(Instruction::Call {
@@ -479,6 +510,7 @@ impl<'a> Builder<'a> {
             parameter_count: self.function.params.len(),
             local_count: self.locals.next,
             instructions: self.code,
+            instruction_spans: self.spans,
         })
     }
 }
@@ -612,6 +644,8 @@ fn execute_function(
             return Err(error("IR execution limit reached", span));
         }
         *fuel -= 1;
+        let instruction_span = function.instruction_spans[pc];
+        let span = instruction_span;
         let instruction = &function.instructions[pc];
         pc += 1;
         match instruction {
@@ -637,7 +671,9 @@ fn execute_function(
                     .ok_or_else(|| error("IR stack underflow on unary operation", span))?;
                 let result = match operator {
                     TokenKind::Bang => Value::Bool(!super::truth(&value)),
-                    TokenKind::Minus => Value::Number(-super::num(value)?),
+                    TokenKind::Minus => {
+                        Value::Number(-super::num(value).map_err(|e| locate(e, span))?)
+                    }
                     _ => return Err(error("unsupported IR unary operator", span)),
                 };
                 stack.push(result);
@@ -649,7 +685,7 @@ fn execute_function(
                 let left = stack
                     .pop()
                     .ok_or_else(|| error("IR stack underflow on binary operation", span))?;
-                stack.push(super::binary(left, operator, right)?);
+                stack.push(super::binary(left, operator, right).map_err(|e| locate(e, span))?);
             }
             Instruction::Call {
                 function: callee,
@@ -667,7 +703,8 @@ fn execute_function(
                     depth + 1,
                     output,
                     capture_output,
-                )?;
+                )
+                .map_err(|e| locate(e, span))?;
                 stack.push(result);
             }
             Instruction::Print { arguments: count } => {
@@ -806,6 +843,7 @@ mod tests {
                     Instruction::Constant(Value::Nil),
                     Instruction::Return,
                 ],
+                instruction_spans: vec![Span::default(); 3],
             }],
         };
         assert!(validate(&module).is_err());
@@ -821,6 +859,7 @@ mod tests {
                     parameter_count: 1,
                     local_count: 0,
                     instructions: vec![Instruction::Constant(Value::Nil), Instruction::Return],
+                    instruction_spans: vec![Span::default(); 2],
                 }],
             },
             ModuleIr {
@@ -829,6 +868,7 @@ mod tests {
                     parameter_count: 0,
                     local_count: 0,
                     instructions: vec![Instruction::LoadLocal(0), Instruction::Return],
+                    instruction_spans: vec![Span::default(); 2],
                 }],
             },
             ModuleIr {
@@ -843,6 +883,7 @@ mod tests {
                         },
                         Instruction::Return,
                     ],
+                    instruction_spans: vec![Span::default(); 2],
                 }],
             },
             ModuleIr {
@@ -855,6 +896,7 @@ mod tests {
                         Instruction::Jump(9),
                         Instruction::Return,
                     ],
+                    instruction_spans: vec![Span::default(); 3],
                 }],
             },
             ModuleIr {
@@ -867,6 +909,7 @@ mod tests {
                         Instruction::Constant(Value::Nil),
                         Instruction::Return,
                     ],
+                    instruction_spans: vec![Span::default(); 3],
                 }],
             },
         ];
@@ -939,6 +982,21 @@ mod tests {
     fn rejects_unknown_variables_and_bad_calls() {
         assert!(lower_source("fn main(){print(missing); }").is_err());
         assert!(lower_source("fn other(){} fn main(){other(1);}").is_err());
+    }
+
+    #[test]
+    fn lowering_diagnostics_retain_expression_locations() {
+        let diagnostic = lower_source("fn main() {\n  print(missing)\n}").unwrap_err();
+        assert_eq!(diagnostic.span.line, 2);
+        assert_eq!(diagnostic.span.column, 9);
+    }
+
+    #[test]
+    fn vm_runtime_errors_retain_expression_locations() {
+        let module = lower_source("fn main() {\n  let x = 1 / 0\n}").unwrap();
+        let diagnostic = execute(&module).unwrap_err();
+        assert_eq!(diagnostic.span.line, 2);
+        assert_eq!(diagnostic.span.column, 11);
     }
 
     #[test]

@@ -40,7 +40,7 @@ For every function inferred or annotated to return a non-Nil value, every path t
 
 ## Diagnostics
 
-A type error should include the source span, expected type, actual type, and a concise remediation. Compiler diagnostics must be deterministic and should never panic on invalid user input. Accurate expression-level spans for semantic diagnostics remain future work.
+Type errors include the originating expression span for inferred/operator errors, typed local mismatches, and argument/return expressions. Function-level, duplicate-declaration, and assignment-target diagnostics still lack exact token spans. Diagnostics should include expected and actual types with a concise remediation; parser and semantic diagnostics must never panic on invalid input.
 
 ## Future RFCs
 

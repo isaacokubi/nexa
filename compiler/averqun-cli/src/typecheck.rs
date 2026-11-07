@@ -1,5 +1,7 @@
 //! Static type inference and operator validation for the Averqun bootstrap AST.
-use crate::{Diagnostic, Expr, Function, Program, Span, Stmt, TokenKind, Value};
+use crate::{
+    has_placeholder_span, Diagnostic, Expr, Function, Program, Span, Stmt, TokenKind, Value,
+};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +36,12 @@ fn error(message: impl Into<String>) -> Diagnostic {
             line: 1,
             column: 1,
         },
+    }
+}
+fn error_at(span: Span, message: impl Into<String>) -> Diagnostic {
+    Diagnostic {
+        message: message.into(),
+        span,
     }
 }
 #[derive(Clone, Default)]
@@ -107,9 +115,10 @@ fn collect_returns(
                 let ty = declared_type(annotation)?;
                 let actual = infer(value, scope, functions)?;
                 if actual != ty && actual != Type::Unknown {
-                    return Err(error(format!(
-                        "cannot initialize {annotation} variable '{name}' with {actual}"
-                    )));
+                    return Err(error_at(
+                        value.span(),
+                        format!("cannot initialize {annotation} variable '{name}' with {actual}"),
+                    ));
                 }
                 scope.define(name.clone(), ty);
                 None
@@ -117,9 +126,10 @@ fn collect_returns(
             Stmt::If(condition, yes, no) => {
                 let condition_type = infer(condition, scope, functions)?;
                 if condition_type != Type::Bool && condition_type != Type::Unknown {
-                    return Err(error(format!(
-                        "if condition must be Bool, found {condition_type}"
-                    )));
+                    return Err(error_at(
+                        condition.span(),
+                        format!("if condition must be Bool, found {condition_type}"),
+                    ));
                 }
                 let mut branch_scope = scope.clone();
                 branch_scope.push();
@@ -139,9 +149,10 @@ fn collect_returns(
             Stmt::While(condition, loop_body) => {
                 let condition_type = infer(condition, scope, functions)?;
                 if condition_type != Type::Bool && condition_type != Type::Unknown {
-                    return Err(error(format!(
-                        "while condition must be Bool, found {condition_type}"
-                    )));
+                    return Err(error_at(
+                        condition.span(),
+                        format!("while condition must be Bool, found {condition_type}"),
+                    ));
                 }
                 let mut nested = scope.clone();
                 nested.push();
@@ -171,17 +182,26 @@ fn collect_returns(
 }
 
 fn infer(e: &Expr, s: &Scope, fs: &HashMap<String, Signature>) -> Result<Type, Diagnostic> {
+    infer_inner(e, s, fs).map_err(|mut diagnostic| {
+        if has_placeholder_span(diagnostic.span) {
+            diagnostic.span = e.span();
+        }
+        diagnostic
+    })
+}
+
+fn infer_inner(e: &Expr, s: &Scope, fs: &HashMap<String, Signature>) -> Result<Type, Diagnostic> {
     match e {
-        Expr::Lit(v) => Ok(match v {
+        Expr::Lit(v, _) => Ok(match v {
             Value::Number(_) => Type::Number,
             Value::String(_) => Type::String,
             Value::Bool(_) => Type::Bool,
             Value::Nil => Type::Nil,
         }),
-        Expr::Var(n) => s
+        Expr::Var(n, _) => s
             .get(n)
             .ok_or_else(|| error(format!("undefined variable '{n}'"))),
-        Expr::Unary(op, x) => {
+        Expr::Unary(op, x, _) => {
             let t = infer(x, s, fs)?;
             match op {
                 TokenKind::Minus if t == Type::Number => Ok(Type::Number),
@@ -191,7 +211,7 @@ fn infer(e: &Expr, s: &Scope, fs: &HashMap<String, Signature>) -> Result<Type, D
                 _ => Ok(Type::Unknown),
             }
         }
-        Expr::Binary(a, op, b) => {
+        Expr::Binary(a, op, b, _) => {
             let l = infer(a, s, fs)?;
             let r = infer(b, s, fs)?;
             use TokenKind::*;
@@ -230,16 +250,17 @@ fn infer(e: &Expr, s: &Scope, fs: &HashMap<String, Signature>) -> Result<Type, D
                 _ => Ok(Type::Unknown),
             }
         }
-        Expr::Call(n, args) => {
+        Expr::Call(n, args, span) => {
             if n == "print" {
                 for a in args {
                     infer(a, s, fs)?;
                 }
                 return Ok(Type::Nil);
             }
-            let sig = fs
-                .get(n)
-                .ok_or_else(|| error(format!("undefined function '{n}'")))?;
+            let sig = fs.get(n).ok_or_else(|| Diagnostic {
+                message: format!("undefined function '{n}'"),
+                span: *span,
+            })?;
             if sig.params.len() != args.len() {
                 return Err(error(format!(
                     "function '{n}' expects {} arguments, got {}",
@@ -266,15 +287,15 @@ fn validate_expression(
     functions: &HashMap<String, Signature>,
 ) -> Result<Type, Diagnostic> {
     match expression {
-        Expr::Lit(_) | Expr::Var(_) => {}
-        Expr::Unary(_, value) => {
+        Expr::Lit(_, _) | Expr::Var(_, _) => {}
+        Expr::Unary(_, value, _) => {
             validate_expression(value, scope, functions)?;
         }
-        Expr::Binary(left, _, right) => {
+        Expr::Binary(left, _, right, _) => {
             validate_expression(left, scope, functions)?;
             validate_expression(right, scope, functions)?;
         }
-        Expr::Call(_, arguments) => {
+        Expr::Call(_, arguments, _) => {
             for argument in arguments {
                 validate_expression(argument, scope, functions)?;
             }
@@ -282,7 +303,8 @@ fn validate_expression(
     }
     let ty = infer(expression, scope, functions)?;
     if ty == Type::Unknown {
-        return Err(error(
+        return Err(error_at(
+            expression.span(),
             "cannot infer expression type; add an explicit annotation",
         ));
     }
@@ -296,44 +318,49 @@ fn collect_call_constraints_expr(
     constraints: &mut HashMap<(String, usize), Type>,
 ) -> Result<(), Diagnostic> {
     match expression {
-        Expr::Lit(_) | Expr::Var(_) => {}
-        Expr::Unary(_, value) => {
+        Expr::Lit(_, _) | Expr::Var(_, _) => {}
+        Expr::Unary(_, value, _) => {
             collect_call_constraints_expr(value, scope, functions, constraints)?;
         }
-        Expr::Binary(left, _, right) => {
+        Expr::Binary(left, _, right, _) => {
             collect_call_constraints_expr(left, scope, functions, constraints)?;
             collect_call_constraints_expr(right, scope, functions, constraints)?;
         }
-        Expr::Call(name, arguments) => {
+        Expr::Call(name, arguments, span) => {
             for argument in arguments {
                 collect_call_constraints_expr(argument, scope, functions, constraints)?;
             }
             if name == "print" {
                 return Ok(());
             }
-            let signature = functions
-                .get(name)
-                .ok_or_else(|| error(format!("undefined function '{name}'")))?;
+            let signature = functions.get(name).ok_or_else(|| Diagnostic {
+                message: format!("undefined function '{name}'"),
+                span: *span,
+            })?;
             if signature.params.len() != arguments.len() {
-                return Err(error(format!(
-                    "function '{name}' expects {} arguments, got {}",
-                    signature.params.len(),
-                    arguments.len()
-                )));
+                return Err(error_at(
+                    *span,
+                    format!(
+                        "function '{name}' expects {} arguments, got {}",
+                        signature.params.len(),
+                        arguments.len()
+                    ),
+                ));
             }
             for (index, argument) in arguments.iter().enumerate() {
                 let actual = infer(argument, scope, functions)?;
                 let declared = signature.params[index];
                 if actual != Type::Unknown {
                     if declared != Type::Unknown && actual != declared {
-                        return Err(error(format!(
-                            "argument to '{name}' expects {declared}, found {actual}"
-                        )));
+                        return Err(error_at(
+                            *span,
+                            format!("argument to '{name}' expects {declared}, found {actual}"),
+                        ));
                     }
                     let key = (name.clone(), index);
                     if let Some(previous) = constraints.get(&key) {
                         if *previous != actual {
-                            return Err(error(format!(
+                            return Err(error_at(*span, format!(
                                 "calls to '{name}' pass incompatible types {previous} and {actual} for parameter {}",
                                 index + 1
                             )));
@@ -418,9 +445,10 @@ fn stmts(
                 let expected = declared_type(name)?;
                 let actual = validate_expression(e, s, fs)?;
                 if actual != expected {
-                    return Err(error(format!(
-                        "cannot initialize {name} variable '{n}' with {actual}"
-                    )));
+                    return Err(error_at(
+                        e.span(),
+                        format!("cannot initialize {name} variable '{n}' with {actual}"),
+                    ));
                 }
                 if s.contains_current(n) {
                     return Err(error(format!("'{n}' already declared in this scope")));
@@ -430,14 +458,20 @@ fn stmts(
             Stmt::While(c, b) => {
                 let t = validate_expression(c, s, fs)?;
                 if t != Type::Bool {
-                    return Err(error(format!("while condition must be Bool, found {t}")));
+                    return Err(error_at(
+                        c.span(),
+                        format!("while condition must be Bool, found {t}"),
+                    ));
                 }
                 scoped_stmts(b, s, fs, ret)?;
             }
             Stmt::Let(n, e, _) => {
                 let t = validate_expression(e, s, fs)?;
                 if t == Type::Unknown {
-                    return Err(error(format!("cannot infer type of local '{n}'")));
+                    return Err(error_at(
+                        e.span(),
+                        format!("cannot infer type of local '{n}'"),
+                    ));
                 }
                 if s.contains_current(n) {
                     return Err(error(format!("'{n}' already declared in this scope")));
@@ -450,7 +484,10 @@ fn stmts(
                     .ok_or_else(|| error(format!("undefined variable '{n}'")))?;
                 let new = validate_expression(e, s, fs)?;
                 if old != new {
-                    return Err(error(format!("cannot assign {new} to '{n}' of type {old}")));
+                    return Err(error_at(
+                        e.span(),
+                        format!("cannot assign {new} to '{n}' of type {old}"),
+                    ));
                 }
             }
             Stmt::Print(e) | Stmt::Expr(e) => {
@@ -464,16 +501,20 @@ fn stmts(
                 };
                 if let Some(expected) = ret {
                     if actual != expected {
-                        return Err(error(format!(
-                            "return type mismatch: expected {expected}, found {actual}"
-                        )));
+                        return Err(error_at(
+                            e.as_ref().map(Expr::span).unwrap_or_default(),
+                            format!("return type mismatch: expected {expected}, found {actual}"),
+                        ));
                     }
                 }
             }
             Stmt::If(c, a, b) => {
                 let t = validate_expression(c, s, fs)?;
                 if t != Type::Bool {
-                    return Err(error(format!("if condition must be Bool, found {t}")));
+                    return Err(error_at(
+                        c.span(),
+                        format!("if condition must be Bool, found {t}"),
+                    ));
                 }
                 scoped_stmts(a, s, fs, ret)?;
                 scoped_stmts(b, s, fs, ret)?;
@@ -597,6 +638,7 @@ pub fn check(p: &Program) -> Result<(), Diagnostic> {
         param_types: _,
         return_type: _,
         body,
+        span,
         ..
     } in &p.functions
     {
@@ -605,23 +647,32 @@ pub fn check(p: &Program) -> Result<(), Diagnostic> {
         for (index, parameter) in params.iter().enumerate() {
             let ty = fs[name].params[index];
             if ty == Type::Unknown {
-                return Err(error(format!(
+                return Err(error_at(*span, format!(
                     "in function '{name}': cannot infer type of parameter '{parameter}'; add an annotation or call the function with a typed value"
                 )));
             }
             s.define(parameter.clone(), ty);
         }
         if expected == Some(Type::Unknown) {
-            return Err(error(format!(
+            return Err(error_at(
+                *span,
+                format!(
                 "in function '{name}': cannot infer return type; add an explicit return annotation"
-            )));
+            ),
+            ));
         }
-        stmts(body, &mut s, &fs, expected)
-            .map_err(|e| error(format!("in function '{name}': {}", e.message)))?;
+        stmts(body, &mut s, &fs, expected).map_err(|mut diagnostic| {
+            diagnostic.message = format!("in function '{name}': {}", diagnostic.message);
+            if has_placeholder_span(diagnostic.span) {
+                diagnostic.span = *span;
+            }
+            diagnostic
+        })?;
         if expected.is_some_and(|t| t != Type::Nil) && can_fall_through(body) {
-            return Err(error(format!(
-                "in function '{name}': not all control-flow paths return a value"
-            )));
+            return Err(error_at(
+                *span,
+                format!("in function '{name}': not all control-flow paths return a value"),
+            ));
         }
     }
     Ok(())
@@ -660,6 +711,12 @@ mod tests {
         assert!(c("fn main(){let x: Number=1;let y: String=\"ok\";print(x);print(y);}").is_ok());
         assert!(c("fn main(){let x: Number=\"wrong\";}").is_err());
         assert!(c("fn main(){let x: Unknown=1;}").is_err())
+    }
+    #[test]
+    fn type_errors_retain_expression_locations() {
+        let diagnostic = c("fn main() {\n  let n: Number = \"bad\"\n}").unwrap_err();
+        assert_eq!(diagnostic.span.line, 2);
+        assert_eq!(diagnostic.span.column, 19);
     }
     #[test]
     fn checks_function_return_type_at_call_sites() {

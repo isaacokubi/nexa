@@ -14,7 +14,7 @@ The legacy reserved words are `fn`, `let`, `var`, `return`, `if`, `else`, `while
 
 Numbers contain decimal digits, optionally followed by `.` and one or more digits. The runtime represents them as IEEE-754 `f64`; there are no integer widths or numeric suffixes. Strings use double quotes and support `\\`, `\n`, `\r`, `\t`, and `\"`. Newlines inside a string and unsupported escapes are errors. Unescaped Unicode scalar values are retained as UTF-8.
 
-The lexer reports the starting byte offset, 1-based line, and 1-based column for each token. The current parser and semantic diagnostics do not consistently retain the originating source span; precise semantic diagnostics are not guaranteed.
+The lexer reports the starting byte offset, 1-based line, and 1-based column for each token. Expression nodes retain spans through type checking, interpreter errors, and IR lowering/VM execution. Function-level, duplicate-declaration, assignment-target, and some inference diagnostics still use a coarse location; precise locations are not guaranteed for every semantic error yet.
 
 ## 2. Grammar
 

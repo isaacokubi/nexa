@@ -87,9 +87,16 @@ This status is tied to the current repository branch and must not be confused wi
 - Verification: formatting, check, build, 39 workspace tests, Clippy with warnings denied, and `git diff --check` passed. Both examples ran through interpreter and IR VM; all compile-fail fixtures remained rejected.
 - Latest commit is `3294782`; this hardening work is uncommitted.
 
+## Diagnostics milestone: expression spans through execution (2026-11-07)
+- Added source spans to all AST expression variants, constructed from source tokens and expression bounds.
+- Type inference/type checking, lexical name checks, interpreter runtime failures, IR lowering errors, and IR VM instruction failures now use expression-level locations. IR functions carry a source span per instruction, and the verifier checks that the location table is complete.
+- Added regression tests asserting exact line/column for type errors, undefined names, interpreter division by zero, IR lowering failures, and IR VM division by zero.
+- Verification: fmt, check, build, 43 workspace tests, Clippy with warnings denied, and `git diff --check` passed. Both examples ran through interpreter and IR VM; all compile-fail fixtures were rejected with non-placeholder source locations where the error is expression-based.
+- Latest pushed commit is `b904b0b`; span work is uncommitted pending checkpoint.
+
 ## Next implementation task
 
-Add source spans to typed AST/HIR diagnostics, then introduce a typed HIR boundary before expanding language syntax.
+Add precise spans to declaration/assignment/function diagnostics, then introduce a typed HIR boundary before expanding language syntax.
 
 ## Accuracy rule
 A feature is considered implemented only when code, tests, documentation, and a verified CI/build result support the claim. Roadmap completion is not a substitute for these artifacts.

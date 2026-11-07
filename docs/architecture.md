@@ -17,7 +17,7 @@ source → lexer → parser → AST → name resolution → typed HIR → owners
 
 Safety analyses must precede code generation. LLVM is an optimization/backend tool, not a performance guarantee; equivalent workloads must be benchmarked against C and Rust.
 
-The return inference pass resolves unannotated function return types from consistent return expressions, propagates resolved return types through calls, and rejects unresolved return types. The AST does not yet preserve spans on expressions or statements, so many semantic/type diagnostics still use a placeholder location. `Unknown` is still permitted in selected expression contexts; this is not a sound complete type checker.
+The type checker infers omitted parameter types from consistent call arguments and unannotated return types from consistent return expressions, propagates both through the call graph, and rejects unresolved types before final body checking. Expression AST nodes retain byte/line/column spans. Type errors, interpreter errors, lowering errors, and IR runtime failures use those spans. Declaration and function-level errors are not yet consistently precise. The current typed layer is still limited to four primitive types and is not a complete general-purpose type system.
 
 Engineering constraints
 ----------------------

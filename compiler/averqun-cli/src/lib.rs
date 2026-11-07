@@ -3,12 +3,20 @@ use std::{collections::HashMap, fmt, fs};
 
 pub(crate) const MAX_CALL_DEPTH: usize = 64;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
     pub line: usize,
     pub column: usize,
+}
+fn cover(start: Span, end: Span) -> Span {
+    Span {
+        start: start.start,
+        end: end.end,
+        line: start.line,
+        column: start.column,
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
@@ -34,6 +42,14 @@ fn diag(_s: &str, m: impl Into<String>) -> Diagnostic {
             line: 1,
             column: 1,
         },
+    }
+}
+pub(crate) fn has_placeholder_span(span: Span) -> bool {
+    span == Span {
+        start: 0,
+        end: 0,
+        line: 1,
+        column: 1,
     }
 }
 
@@ -363,11 +379,22 @@ impl fmt::Display for Value {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Lit(Value),
-    Var(String),
-    Unary(TokenKind, Box<Expr>),
-    Binary(Box<Expr>, TokenKind, Box<Expr>),
-    Call(String, Vec<Expr>),
+    Lit(Value, Span),
+    Var(String, Span),
+    Unary(TokenKind, Box<Expr>, Span),
+    Binary(Box<Expr>, TokenKind, Box<Expr>, Span),
+    Call(String, Vec<Expr>, Span),
+}
+impl Expr {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Lit(_, span)
+            | Self::Var(_, span)
+            | Self::Unary(_, _, span)
+            | Self::Binary(_, _, _, span)
+            | Self::Call(_, _, span) => *span,
+        }
+    }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
@@ -622,7 +649,7 @@ impl Parser {
             return Ok(Stmt::Block(self.block()?));
         }
         let x = self.expr()?;
-        if let Expr::Var(ref n) = x {
+        if let Expr::Var(ref n, _) = x {
             let name = n.clone();
             if self.eat(&TokenKind::Eq) || self.eat(&TokenKind::ColonEq) {
                 let v = self.expr()?;
@@ -630,7 +657,7 @@ impl Parser {
                 return Ok(Stmt::Assign(name, v));
             }
             self.eat(&TokenKind::Semi);
-            return Ok(Stmt::Expr(Expr::Var(name)));
+            return Ok(Stmt::Expr(Expr::Var(name, x.span())));
         }
         self.eat(&TokenKind::Semi);
         Ok(Stmt::Expr(x))
@@ -649,7 +676,8 @@ impl Parser {
             if let Some(o) = o {
                 self.adv();
                 let r = next(self)?;
-                e = Expr::Binary(Box::new(e), o, Box::new(r))
+                let span = cover(e.span(), r.span());
+                e = Expr::Binary(Box::new(e), o, Box::new(r), span)
             } else {
                 break;
             }
@@ -686,22 +714,28 @@ impl Parser {
         )
     }
     fn unary(&mut self) -> Result<Expr, Diagnostic> {
-        if self.eat(&TokenKind::Bang) {
-            return Ok(Expr::Unary(TokenKind::Bang, Box::new(self.unary()?)));
+        if self.check(&TokenKind::Bang) {
+            let operator = self.adv();
+            let value = self.unary()?;
+            let span = cover(operator.span, value.span());
+            return Ok(Expr::Unary(TokenKind::Bang, Box::new(value), span));
         }
-        if self.eat(&TokenKind::Minus) {
-            return Ok(Expr::Unary(TokenKind::Minus, Box::new(self.unary()?)));
+        if self.check(&TokenKind::Minus) {
+            let operator = self.adv();
+            let value = self.unary()?;
+            let span = cover(operator.span, value.span());
+            return Ok(Expr::Unary(TokenKind::Minus, Box::new(value), span));
         }
         self.primary()
     }
     fn primary(&mut self) -> Result<Expr, Diagnostic> {
         let t = self.adv();
         match t.kind {
-            TokenKind::Number(n) => Ok(Expr::Lit(Value::Number(n))),
-            TokenKind::String(s) => Ok(Expr::Lit(Value::String(s))),
-            TokenKind::True => Ok(Expr::Lit(Value::Bool(true))),
-            TokenKind::False => Ok(Expr::Lit(Value::Bool(false))),
-            TokenKind::Nil => Ok(Expr::Lit(Value::Nil)),
+            TokenKind::Number(n) => Ok(Expr::Lit(Value::Number(n), t.span)),
+            TokenKind::String(s) => Ok(Expr::Lit(Value::String(s), t.span)),
+            TokenKind::True => Ok(Expr::Lit(Value::Bool(true), t.span)),
+            TokenKind::False => Ok(Expr::Lit(Value::Bool(false), t.span)),
+            TokenKind::Nil => Ok(Expr::Lit(Value::Nil, t.span)),
             TokenKind::Print => {
                 self.expect(&TokenKind::LParen, "expected '(' after print")?;
                 let mut a = Vec::new();
@@ -713,8 +747,8 @@ impl Parser {
                         }
                     }
                 }
-                self.expect(&TokenKind::RParen, "expected ')' after print")?;
-                Ok(Expr::Call("print".into(), a))
+                let close = self.expect(&TokenKind::RParen, "expected ')' after print")?;
+                Ok(Expr::Call("print".into(), a, cover(t.span, close.span)))
             }
             TokenKind::Ident(n) => {
                 let call_open = if self.eat(&TokenKind::LParen) {
@@ -734,10 +768,10 @@ impl Parser {
                             }
                         }
                     }
-                    self.expect(&close, message)?;
-                    Ok(Expr::Call(n, a))
+                    let close = self.expect(&close, message)?;
+                    Ok(Expr::Call(n, a, cover(t.span, close.span)))
                 } else {
-                    Ok(Expr::Var(n))
+                    Ok(Expr::Var(n, t.span))
                 }
             }
             TokenKind::LParen => {
@@ -940,13 +974,21 @@ impl Interpreter {
         result
     }
     fn eval(&mut self, x: &Expr, e: &mut Env) -> Result<Value, Diagnostic> {
+        self.eval_inner(x, e).map_err(|mut diagnostic| {
+            if has_placeholder_span(diagnostic.span) {
+                diagnostic.span = x.span();
+            }
+            diagnostic
+        })
+    }
+    fn eval_inner(&mut self, x: &Expr, e: &mut Env) -> Result<Value, Diagnostic> {
         match x {
-            Expr::Lit(v) => Ok(v.clone()),
-            Expr::Var(n) => e
+            Expr::Lit(v, _) => Ok(v.clone()),
+            Expr::Var(n, _) => e
                 .get(n)
                 .map(|x| x.0.clone())
                 .ok_or_else(|| diag("", format!("undefined variable '{n}'"))),
-            Expr::Unary(o, x) => {
+            Expr::Unary(o, x, _) => {
                 let v = self.eval(x, e)?;
                 match o {
                     TokenKind::Bang => Ok(Value::Bool(!truth(&v))),
@@ -954,7 +996,7 @@ impl Interpreter {
                     _ => unreachable!(),
                 }
             }
-            Expr::Call(n, a) => {
+            Expr::Call(n, a, _) => {
                 let v = a
                     .iter()
                     .map(|x| self.eval(x, e))
@@ -968,7 +1010,7 @@ impl Interpreter {
                     self.call(n, v)
                 }
             }
-            Expr::Binary(a, o, b) => {
+            Expr::Binary(a, o, b, _) => {
                 let l = self.eval(a, e)?;
                 if *o == TokenKind::AndAnd && !truth(&l) {
                     return Ok(Value::Bool(false));
@@ -1062,34 +1104,38 @@ impl CheckScope {
 }
 fn check_expr(x: &Expr, env: &CheckScope, fns: &HashMap<String, usize>) -> Result<(), Diagnostic> {
     match x {
-        Expr::Lit(_) => Ok(()),
-        Expr::Var(n) => {
+        Expr::Lit(_, _) => Ok(()),
+        Expr::Var(n, span) => {
             if env.get(n).is_some() {
                 Ok(())
             } else {
-                Err(diag("", format!("undefined variable '{n}'")))
+                Err(Diagnostic {
+                    message: format!("undefined variable '{n}'"),
+                    span: *span,
+                })
             }
         }
-        Expr::Unary(_, a) => check_expr(a, env, fns),
-        Expr::Binary(a, _, b) => {
+        Expr::Unary(_, a, _) => check_expr(a, env, fns),
+        Expr::Binary(a, _, b, _) => {
             check_expr(a, env, fns)?;
             check_expr(b, env, fns)
         }
-        Expr::Call(n, args) => {
+        Expr::Call(n, args, span) => {
             for a in args {
                 check_expr(a, env, fns)?
             }
             if n == "print" {
                 return Ok(());
             }
-            let ar = fns
-                .get(n)
-                .ok_or_else(|| diag("", format!("undefined function '{n}'")))?;
+            let ar = fns.get(n).ok_or_else(|| Diagnostic {
+                message: format!("undefined function '{n}'"),
+                span: *span,
+            })?;
             if *ar != args.len() {
-                return Err(diag(
-                    "",
-                    format!("function '{n}' expects {ar} arguments, got {}", args.len()),
-                ));
+                return Err(Diagnostic {
+                    message: format!("function '{n}' expects {ar} arguments, got {}", args.len()),
+                    span: *span,
+                });
             }
             Ok(())
         }
@@ -1256,8 +1302,17 @@ mod tests {
         assert!(Interpreter::new(p).run().is_err())
     }
     #[test]
+    fn runtime_errors_retain_expression_locations() {
+        let program = compile("fn main() {\n  print(1 / 0)\n}").unwrap();
+        let diagnostic = Interpreter::new(program).run().unwrap_err();
+        assert_eq!(diagnostic.span.line, 2);
+        assert_eq!(diagnostic.span.column, 9);
+    }
+    #[test]
     fn catches_undefined_before_execution() {
-        assert!(compile("fn main(){print(missing);}").is_err())
+        let diagnostic = compile("fn main() {\n  print(missing)\n}").unwrap_err();
+        assert_eq!(diagnostic.span.line, 2);
+        assert_eq!(diagnostic.span.column, 9);
     }
     #[test]
     fn catches_call_arity() {
