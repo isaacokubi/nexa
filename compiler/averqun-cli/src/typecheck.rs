@@ -4,6 +4,233 @@ use crate::{
 };
 use std::collections::HashMap;
 
+pub type FunctionId = u32;
+pub type LocalId = u32;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirProgram {
+    pub functions: Vec<HirFunction>,
+    pub entry: FunctionId,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirFunction {
+    pub id: FunctionId,
+    pub name: String,
+    pub params: Vec<HirLocal>,
+    pub return_type: Type,
+    pub body: Vec<HirStatement>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirLocal {
+    pub id: LocalId,
+    pub name: String,
+    pub ty: Type,
+    pub mutable: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirExpression {
+    pub kind: HirExpressionKind,
+    pub ty: Type,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirExpressionKind {
+    Literal(Value),
+    Local(LocalId),
+    Unary(TokenKind, Box<HirExpression>),
+    Binary(Box<HirExpression>, TokenKind, Box<HirExpression>),
+    Call(FunctionId, Vec<HirExpression>),
+    BuiltinPrint(Vec<HirExpression>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirStatement {
+    Let(HirLocal, HirExpression),
+    Assign(LocalId, Span, HirExpression),
+    Print(HirExpression),
+    Expression(HirExpression),
+    Return(Option<HirExpression>),
+    If(HirExpression, Vec<HirStatement>, Vec<HirStatement>),
+    While(HirExpression, Vec<HirStatement>),
+    Block(Vec<HirStatement>),
+}
+
+struct HirBuilder<'a> {
+    function_ids: &'a HashMap<String, FunctionId>,
+    scopes: Vec<HashMap<String, HirLocal>>,
+    next_local: LocalId,
+}
+
+impl HirBuilder<'_> {
+    fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn pop_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn scope_types(&self) -> Scope {
+        Scope {
+            layers: self
+                .scopes
+                .iter()
+                .map(|layer| {
+                    layer
+                        .iter()
+                        .map(|(name, local)| (name.clone(), local.ty))
+                        .collect()
+                })
+                .collect(),
+        }
+    }
+
+    fn resolve_local(&self, name: &str, span: Span) -> Result<HirLocal, Diagnostic> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name))
+            .cloned()
+            .ok_or_else(|| error_at(span, format!("unresolved HIR local '{name}'")))
+    }
+
+    fn define_local(
+        &mut self,
+        name: &str,
+        ty: Type,
+        mutable: bool,
+        span: Span,
+    ) -> Result<HirLocal, Diagnostic> {
+        let Some(scope) = self.scopes.last_mut() else {
+            return Err(error_at(span, "internal HIR error: no active local scope"));
+        };
+        if scope.contains_key(name) {
+            return Err(error_at(span, format!("duplicate HIR local '{name}'")));
+        }
+        let local = HirLocal {
+            id: self.next_local,
+            name: name.to_owned(),
+            ty,
+            mutable,
+            span,
+        };
+        self.next_local = self
+            .next_local
+            .checked_add(1)
+            .ok_or_else(|| error_at(span, "HIR local identifier space exhausted"))?;
+        scope.insert(name.to_owned(), local.clone());
+        Ok(local)
+    }
+
+    fn expression(
+        &self,
+        expression: &Expr,
+        functions: &HashMap<String, Signature>,
+    ) -> Result<HirExpression, Diagnostic> {
+        let span = expression.span();
+        let ty = infer(expression, &self.scope_types(), functions)?;
+        let kind = match expression {
+            Expr::Lit(value, _) => HirExpressionKind::Literal(value.clone()),
+            Expr::Var(name, _) => HirExpressionKind::Local(self.resolve_local(name, span)?.id),
+            Expr::Unary(operator, operand, _) => HirExpressionKind::Unary(
+                operator.clone(),
+                Box::new(self.expression(operand, functions)?),
+            ),
+            Expr::Binary(left, operator, right, _) => HirExpressionKind::Binary(
+                Box::new(self.expression(left, functions)?),
+                operator.clone(),
+                Box::new(self.expression(right, functions)?),
+            ),
+            Expr::Call(name, arguments, _) if name == "print" => HirExpressionKind::BuiltinPrint(
+                arguments
+                    .iter()
+                    .map(|argument| self.expression(argument, functions))
+                    .collect::<Result<_, _>>()?,
+            ),
+            Expr::Call(name, arguments, _) => {
+                let id =
+                    self.function_ids.get(name).copied().ok_or_else(|| {
+                        error_at(span, format!("unresolved HIR function '{name}'"))
+                    })?;
+                HirExpressionKind::Call(
+                    id,
+                    arguments
+                        .iter()
+                        .map(|argument| self.expression(argument, functions))
+                        .collect::<Result<_, _>>()?,
+                )
+            }
+        };
+        Ok(HirExpression { kind, ty, span })
+    }
+
+    fn statements(
+        &mut self,
+        statements: &[Stmt],
+        functions: &HashMap<String, Signature>,
+    ) -> Result<Vec<HirStatement>, Diagnostic> {
+        let mut output = Vec::with_capacity(statements.len());
+        for statement in statements {
+            let lowered = match statement {
+                Stmt::Let(name, value, mutable, span) => {
+                    let value_hir = self.expression(value, functions)?;
+                    let local = self.define_local(name, value_hir.ty, *mutable, *span)?;
+                    HirStatement::Let(local, value_hir)
+                }
+                Stmt::TypedLet(name, annotation, value, mutable, span) => {
+                    let value_hir = self.expression(value, functions)?;
+                    let ty = declared_type(annotation)?;
+                    let local = self.define_local(name, ty, *mutable, *span)?;
+                    HirStatement::Let(local, value_hir)
+                }
+                Stmt::Assign(name, value, span) => {
+                    let local = self.resolve_local(name, *span)?;
+                    HirStatement::Assign(local.id, *span, self.expression(value, functions)?)
+                }
+                Stmt::Print(value) => HirStatement::Print(self.expression(value, functions)?),
+                Stmt::Expr(value) => HirStatement::Expression(self.expression(value, functions)?),
+                Stmt::Return(value) => HirStatement::Return(
+                    value
+                        .as_ref()
+                        .map(|expression| self.expression(expression, functions))
+                        .transpose()?,
+                ),
+                Stmt::If(condition, yes, no) => {
+                    let condition = self.expression(condition, functions)?;
+                    self.push_scope();
+                    let yes = self.statements(yes, functions)?;
+                    self.pop_scope();
+                    self.push_scope();
+                    let no = self.statements(no, functions)?;
+                    self.pop_scope();
+                    HirStatement::If(condition, yes, no)
+                }
+                Stmt::While(condition, body) => {
+                    let condition = self.expression(condition, functions)?;
+                    self.push_scope();
+                    let body = self.statements(body, functions)?;
+                    self.pop_scope();
+                    HirStatement::While(condition, body)
+                }
+                Stmt::Block(body) => {
+                    self.push_scope();
+                    let body = self.statements(body, functions)?;
+                    self.pop_scope();
+                    HirStatement::Block(body)
+                }
+            };
+            output.push(lowered);
+        }
+        Ok(output)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
     Number,
@@ -569,7 +796,7 @@ fn can_fall_through(body: &[Stmt]) -> bool {
     }
     true
 }
-pub fn check(p: &Program) -> Result<(), Diagnostic> {
+fn check_signatures(p: &Program) -> Result<HashMap<String, Signature>, Diagnostic> {
     let mut fs: HashMap<String, Signature> = p
         .functions
         .iter()
@@ -691,7 +918,52 @@ pub fn check(p: &Program) -> Result<(), Diagnostic> {
             ));
         }
     }
-    Ok(())
+    Ok(fs)
+}
+
+pub fn check_typed(p: &Program) -> Result<HirProgram, Diagnostic> {
+    let fs = check_signatures(p)?;
+    let function_ids: HashMap<String, FunctionId> = p
+        .functions
+        .iter()
+        .enumerate()
+        .map(|(index, function)| (function.name.clone(), index as FunctionId))
+        .collect();
+    let entry = function_ids
+        .get("main")
+        .copied()
+        .ok_or_else(|| error("missing HIR entry function 'main'"))?;
+    let mut functions = Vec::with_capacity(p.functions.len());
+    for (index, function) in p.functions.iter().enumerate() {
+        let mut builder = HirBuilder {
+            function_ids: &function_ids,
+            scopes: vec![HashMap::new()],
+            next_local: 0,
+        };
+        let mut params = Vec::with_capacity(function.params.len());
+        for (parameter_index, name) in function.params.iter().enumerate() {
+            params.push(builder.define_local(
+                name,
+                fs[&function.name].params[parameter_index],
+                false,
+                function.param_spans[parameter_index],
+            )?);
+        }
+        let body = builder.statements(&function.body, &fs)?;
+        functions.push(HirFunction {
+            id: index as FunctionId,
+            name: function.name.clone(),
+            params,
+            return_type: fs[&function.name].inferred_ret,
+            body,
+            span: function.span,
+        });
+    }
+    Ok(HirProgram { functions, entry })
+}
+
+pub fn check(p: &Program) -> Result<(), Diagnostic> {
+    check_signatures(p).map(|_| ())
 }
 #[cfg(test)]
 mod tests {
@@ -699,6 +971,44 @@ mod tests {
     use crate::{Lexer, Parser};
     fn c(src: &str) -> Result<(), Diagnostic> {
         check(&Parser::new(Lexer::new(src).tokenize()?).parse()?)
+    }
+    #[test]
+    fn typed_hir_resolves_function_and_local_ids_and_expression_types() {
+        let hir = crate::compile_to_hir(
+            "fn twice(x: Number) -> Number { let y = x * 2; return y }\nfn main() { var n = twice(21); if true { let t = n; print(t); } }",
+        )
+        .unwrap();
+        assert_eq!(hir.entry, 1);
+        assert_eq!(hir.functions[0].return_type, Type::Number);
+        assert_eq!(hir.functions[0].params[0].id, 0);
+        assert_eq!(hir.functions[0].params[0].span.column, 10);
+        assert!(hir.functions[0].span.end > hir.functions[0].span.start);
+        let HirStatement::Let(y, HirExpression { ty, .. }) = &hir.functions[0].body[0] else {
+            panic!("expected a typed local declaration");
+        };
+        assert_eq!(y.id, 1);
+        assert_eq!(*ty, Type::Number);
+        let HirStatement::Let(_, initializer) = &hir.functions[1].body[0] else {
+            panic!("expected main local declaration");
+        };
+        assert_eq!(initializer.ty, Type::Number);
+        assert!(matches!(initializer.kind, HirExpressionKind::Call(0, _)));
+        let HirStatement::If(_, branch, _) = &hir.functions[1].body[1] else {
+            panic!("expected branch");
+        };
+        let HirStatement::Let(branch_local, _) = &branch[0] else {
+            panic!("expected branch local declaration");
+        };
+        assert_eq!(branch_local.id, 1);
+        assert!(!branch_local.mutable);
+        assert!(branch_local.span.line > 0);
+    }
+
+    #[test]
+    fn typed_hir_is_not_built_when_typechecking_fails() {
+        let error =
+            crate::compile_to_hir("fn main() { let answer: Number = \"bad\" }").unwrap_err();
+        assert!(error.message.contains("cannot initialize"));
     }
     #[test]
     fn rejects_string_math() {

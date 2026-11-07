@@ -3,7 +3,7 @@ Averqun Compiler Architecture
 
 Bootstrap pipeline
 ------------------
-source → lexer → tokens with source spans → recursive-descent parser → AST → lexical name/mutability checks → primitive type checking with conservative function return inference → interpreter
+source → lexer → tokens with source spans → recursive-descent parser → AST → lexical name/mutability checks → primitive type checking with conservative function return inference → typed HIR
 
 The frontend can also lower the validated AST into a target-independent stack IR. IR includes local-slot operations, calls, print operations, arithmetic and logical operators, conditional and loop jumps, and return instructions. Logical AND/OR use keep-value conditional jumps so the IR VM preserves short-circuit behavior.
 
@@ -18,6 +18,8 @@ source → lexer → parser → AST → name resolution → typed HIR → owners
 Safety analyses must precede code generation. LLVM is an optimization/backend tool, not a performance guarantee; equivalent workloads must be benchmarked against C and Rust.
 
 The type checker infers omitted parameter types from consistent call arguments and unannotated return types from consistent return expressions, propagates both through the call graph, and rejects unresolved types before final body checking. Expression AST nodes retain byte/line/column spans, and variable declarations and assignment targets now retain spans through semantic and runtime checks. Function-level and parameter-annotation errors are not yet consistently precise. The current typed layer is still limited to four primitive types and is not a complete general-purpose type system.
+
+`compile_to_hir` returns typed expression nodes with primitive result types, resolved function IDs, function-local local IDs, mutability, and source spans. `averqun hir FILE` prints this representation. The reference interpreter continues to execute the source AST. The stack IR currently also lowers from the AST; HIR-to-IR lowering is the next compiler-boundary task.
 
 Engineering constraints
 ----------------------

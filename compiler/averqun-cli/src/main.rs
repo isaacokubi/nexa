@@ -6,7 +6,7 @@ use averqun::{
 use std::{env, fs, process};
 fn usage() {
     eprintln!(
-        "Averqun 0.1.0 bootstrap\nUsage: averqun <run|ir-run|check|tokens|ast|ir> <file.avq>"
+        "Averqun 0.1.0 bootstrap\nUsage: averqun <run|ir-run|check|tokens|ast|hir|ir> <file.avq>"
     );
 }
 fn main() {
@@ -33,6 +33,7 @@ fn main() {
             .tokenize()
             .and_then(|t| Parser::new(t).parse())
             .map(|p| println!("{p:#?}")),
+        "hir" => averqun::compile_to_hir(&src).map(|hir| println!("{hir:#?}")),
         "check" => compile(&src).map(|_| println!("✓ {path}: syntax OK")),
         "ir" => compile(&src)
             .and_then(|p| lower(&p))

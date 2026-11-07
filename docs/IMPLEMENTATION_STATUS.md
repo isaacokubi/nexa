@@ -2,6 +2,12 @@
 
 This status is tied to the current repository branch and must not be confused with the intended Averqun feature set.
 
+## Current checkpoint (2026-11-07)
+- HEAD before this work: `5d2e5f0` on `feat/compiler-foundation`, clean and tracking origin. Six existing stashes were preserved.
+- Typed HIR adds typed expression nodes, resolved function/local IDs, mutable local declarations, typed function signatures, and source spans. It is exposed through `compile_to_hir` and `averqun hir`.
+- The next task is to make the existing stack IR lower from typed HIR rather than directly from the AST, retaining AST compatibility for the interpreter.
+- No native code generator, complete language type system, package system, standard library, async runtime, or LSP exists yet. Do not claim completion or merge to `main` while these acceptance gaps remain.
+
 ## Present in bootstrap
 - Rust workspace and CLI.
 - Lexer/token model with byte offsets and line/column.
@@ -15,6 +21,7 @@ This status is tied to the current repository branch and must not be confused wi
 - Target-independent stack IR lowering with local slots, calls, print, arithmetic, short-circuit branches, conditional/loop jumps and returns.
 - Executable reference IR virtual machine with local frames, function calls, stack checks, jump validation, execution fuel and recursion-depth limits.
 - CLI commands `run`, `check`, `tokens`, `ast`, `ir`, and `ir-run`.
+- Typed HIR API (`compile_to_hir`) and `hir` CLI inspection command (verified below; checkpoint commit pending).
 - Unit tests and hello example.
 
 ## Recovery and verification checkpoint (2026-11-07)
@@ -51,7 +58,7 @@ This status is tied to the current repository branch and must not be confused wi
 - Latest committed checkpoint remains `570f057`; the type-inference work is currently uncommitted.
 
 ## Not implemented
-- Declared type AST/HIR and a complete, sound static type system; bootstrap Unknown inference and source-span propagation remain limited.
+- Expanded type syntax and a complete, sound static type system; current HIR carries only Number, String, Bool, and Nil, after rejecting unresolved inference.
 - Integer widths, overflow modes, generics, traits, structs, enums, pattern matching.
 - Ownership/borrow/lifetime checking and destructor semantics.
 - Full typed MIR, optimization pipeline, LLVM backend, object/executable emission.
@@ -66,10 +73,11 @@ This status is tied to the current repository branch and must not be confused wi
 
 | Feature area | Status | Evidence / remaining work |
 | --- | --- | --- |
-| Lexer, parser, primitive AST | TESTED | 38-test suite; parser depth limits and recovery remain absent |
-| Basic name/scope/mutability checks | TESTED | Compile-time checks; symbols and semantic spans are not explicit IR |
-| Primitive type checking | TESTED | Primitive annotations and inferred returns work; Unknown expression paths and source spans remain |
-| Stack IR validation and VM | TESTED | Structural/stack verification before execution; no basic blocks or typed MIR |
+| Lexer, parser, primitive AST | TESTED | Nesting and operator-chain limits; no syntax recovery |
+| Basic name/scope/mutability checks | TESTED | Local IDs/spans now represented in typed HIR; module resolution absent |
+| Primitive type checking | TESTED | Rejects unresolved expressions and produces HIR for four primitive types |
+| Typed HIR | TESTED | Typed expression tree, function/local IDs, mutability, spans; stack IR still lowers directly from AST |
+| Stack IR validation and VM | TESTED | Structural/stack verification before execution; no optimizer or native backend |
 | Interpreter | TESTED | Basic semantics and resource bounds; aggregates/closures/errors absent |
 | Native backend, modules, package manager, standard library, concurrency, tooling | NOT STARTED | See release gates and roadmap |
 
@@ -96,7 +104,7 @@ This status is tied to the current repository branch and must not be confused wi
 
 ## Next implementation task
 
-Add precise spans to declaration/assignment/function diagnostics, then introduce a typed HIR boundary with resolved primitive type identities before expanding language syntax.
+Change stack IR lowering to consume typed HIR and validate the AST-to-HIR-to-IR boundary end to end.
 
 ## Parser safety milestone (2026-11-07)
 - Added a 128-level recursion limit for nested expressions/unary operators and nested blocks, plus a 128-operator per-precedence chain limit to bound left-nested AST depth. Excess input produces a source-positioned diagnostic rather than risking process stack exhaustion in later compiler passes.
@@ -109,8 +117,15 @@ Add precise spans to declaration/assignment/function diagnostics, then introduce
 ## Declaration diagnostic spans (2026-11-07)
 - Declaration names and assignment targets now carry spans in the AST. Duplicate bindings, invalid type annotations, unresolved assignment targets, and immutable assignment errors report those locations in static checks and interpreter execution.
 - Added exact line/column regression checks for these diagnostics, including annotation errors raised during fixed-point inference.
-- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (48 passed), Clippy with warnings denied, `git diff --check`, and both examples via `run` and `ir-run` passed. This work is currently uncommitted.
+- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (48 passed), Clippy with warnings denied, `git diff --check`, and both examples via `run` and `ir-run` passed.
 - Committed and pushed as `7c6e14e` (`feat(diagnostics): preserve declaration source spans`).
+
+## Typed HIR milestone (2026-11-07)
+- Added typed HIR structures for functions, primitive-typed expressions, locals, statements, function calls and built-in output. Local references resolve to per-function `LocalId`s; function calls resolve to `FunctionId`s. HIR keeps mutability and declaration/expression/function spans.
+- Added `compile_to_hir` and `averqun hir FILE`. Invalid programs are rejected before HIR construction. The interpreter and existing stack IR continue to consume the AST for compatibility; lowering stack IR from HIR remains next.
+- Added positive HIR ID/type/scope/span tests and a negative test proving type errors prevent HIR generation.
+- Verification: formatting, check, build, 50 workspace tests, Clippy with warnings denied, and diff check passed. Both examples successfully emitted HIR and ran through interpreter and IR VM. All three compile-fail fixtures remained rejected.
+- This milestone is verified but uncommitted at the present checkpoint.
 
 ## Accuracy rule
 A feature is considered implemented only when code, tests, documentation, and a verified CI/build result support the claim. Roadmap completion is not a substitute for these artifacts.

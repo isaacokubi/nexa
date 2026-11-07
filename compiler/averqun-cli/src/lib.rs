@@ -412,6 +412,7 @@ pub enum Stmt {
 pub struct Function {
     pub name: String,
     pub params: Vec<String>,
+    pub param_spans: Vec<Span>,
     pub param_types: Vec<Option<String>>,
     pub return_type: Option<String>,
     pub body: Vec<Stmt>,
@@ -516,10 +517,12 @@ impl Parser {
         };
         self.expect(&left, "expected parameter-list opener")?;
         let mut params = Vec::new();
+        let mut param_spans = Vec::new();
         let mut param_types = Vec::new();
         if !self.check(&right) {
             loop {
                 let p = self.expect(&TokenKind::Ident(String::new()), "expected parameter")?;
+                param_spans.push(p.span);
                 if let TokenKind::Ident(x) = p.kind {
                     if params.contains(&x) {
                         return Err(Diagnostic {
@@ -563,13 +566,15 @@ impl Parser {
             None
         };
         let body = self.block()?;
+        let function_span = cover(span, self.t[self.i.saturating_sub(1)].span);
         Ok(Function {
             name,
             params,
+            param_spans,
             param_types,
             return_type,
             body,
-            span,
+            span: function_span,
         })
     }
     fn block(&mut self) -> Result<Vec<Stmt>, Diagnostic> {
@@ -1292,6 +1297,11 @@ fn validate(p: &Program) -> Result<(), Diagnostic> {
     Ok(())
 }
 pub mod typecheck;
+pub fn compile_to_hir(src: &str) -> Result<typecheck::HirProgram, Diagnostic> {
+    let program = Parser::new(Lexer::new(src).tokenize()?).parse()?;
+    validate(&program)?;
+    typecheck::check_typed(&program)
+}
 pub fn compile(src: &str) -> Result<Program, Diagnostic> {
     let p = Parser::new(Lexer::new(src).tokenize()?).parse()?;
     validate(&p)?;
