@@ -1,0 +1,4 @@
+weave main[] {
+  kept greeting := "Hello Averqun"
+  show greeting
+}

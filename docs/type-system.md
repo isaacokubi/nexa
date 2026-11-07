@@ -1,0 +1,47 @@
+# Averqun Type System (Bootstrap + Design)
+
+## Status and boundary
+
+This document distinguishes implemented bootstrap checks from the intended language contract. The bootstrap frontend infers primitive expression types, validates operators and Boolean conditions, checks typed local declarations, typed function parameters and call arguments, propagates declared function return types to call sites, and validates explicit return values.
+
+Annotated non-Nil functions must return a value on every path that can complete normally. The current analysis handles sequential statements, nested blocks, and both branches of conditionals. Loops are conservatively treated as potentially falling through because the current AST does not prove loop termination. Unannotated functions and functions annotated as Nil may fall through.
+
+The bootstrap interpreter currently exposes Number (f64), String, Bool, and Nil. This is not the complete planned type system.
+
+## Primitive types
+
+The stable design vocabulary is:
+- Bool: exactly true or false.
+- I8/I16/I32/I64/I128 and U8/U16/U32/U64/U128: fixed-width integers.
+- F32/F64: IEEE floating point.
+- Char: Unicode scalar value.
+- String: UTF-8 text.
+- Unit: absence of a meaningful value.
+- Never: expressions that cannot complete normally.
+
+Only the bootstrap types listed above are currently implemented.
+
+## Inference and annotations
+
+Local inference derives a binding's type from its initializer. Explicit annotations are checked against the initializer and do not silently coerce incompatible values. Function parameter annotations are checked against calls; omitted parameter types are inferred from consistent call arguments. Uncalled parameters or conflicting callers are rejected. For an unannotated function, return types are inferred from its return expressions and propagated to call sites, including through calls to other inferable functions. All returns must agree. Unresolved recursive return cycles require an explicit return annotation. `Unknown` is an inference-only state: the final body check recursively validates expression types and rejects unresolved values. This primitive checker remains incomplete for types beyond Number/String/Bool/Nil, and semantic source spans are not yet retained.
+
+## Operators
+
+- Arithmetic accepts compatible numeric operands.
+- String concatenation accepts two strings.
+- Equality requires compatible types.
+- Ordering currently accepts numeric operands.
+- Logical operators require Bool operands.
+- The interpreter reports runtime errors such as division by zero.
+
+## Return-flow analysis
+
+For every function inferred or annotated to return a non-Nil value, every path that can reach the end of the function body is rejected. A return in one conditional branch is insufficient unless the other branch also returns or a later sequential statement returns. Nested blocks are analyzed recursively. A loop is not considered a guaranteed return, even when its condition is the literal true, until the language has explicit termination analysis.
+
+## Diagnostics
+
+Type errors include the originating expression span for inferred/operator errors, typed local mismatches, and argument/return expressions. Function-level, duplicate-declaration, and assignment-target diagnostics still lack exact token spans. Diagnostics should include expected and actual types with a concise remediation; parser and semantic diagnostics must never panic on invalid input.
+
+## Future RFCs
+
+Integer overflow policy, numeric literal inference, generic constraints, nullable/optional types, trait-based operator overloading, and ABI representation require RFCs before stabilization.

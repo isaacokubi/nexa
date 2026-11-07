@@ -1,0 +1,4 @@
+module main
+weave main[] {
+    show "Hello from Averqun!"
+}

@@ -1,0 +1,10 @@
+[package]
+name = "averqun"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Averqun language bootstrap compiler and interpreter"
+
+[[bin]]
+name = "averqun"
+path = "src/main.rs"

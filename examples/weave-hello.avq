@@ -1,0 +1,8 @@
+weave add[left: Number, right: Number] gives Number {
+    yield left + right
+}
+
+weave main[] {
+    kept answer: Number := add!{20, 22}
+    show answer
+}

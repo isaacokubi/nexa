@@ -1,0 +1,139 @@
+# Implementation Status
+
+This status is tied to the current repository branch and must not be confused with the intended Averqun feature set.
+
+## Current checkpoint (2026-11-07)
+- HEAD before this work: `5d2e5f0` on `feat/compiler-foundation`, clean and tracking origin. Six existing stashes were preserved.
+- Typed HIR adds typed expression nodes, resolved function/local IDs, mutable local declarations, typed function signatures, and source spans. It is exposed through `compile_to_hir` and `averqun hir`.
+- Production stack IR now lowers from typed HIR; AST lowering is retained only in unit tests for differential checks. This HIR-to-IR checkpoint remains in progress pending full verification and commit.
+- Next after this checkpoint: expand the type system and lower-level control-flow representation. Native code generation remains a critical gap.
+- No native code generator, complete language type system, package system, standard library, async runtime, or LSP exists yet. Do not claim completion or merge to `main` while these acceptance gaps remain.
+
+## Present in bootstrap
+- Rust workspace and CLI.
+- Lexer/token model with byte offsets and line/column.
+- Recursive descent parser and AST.
+- Function declarations and calls.
+- Variables, assignment, blocks, returns, conditionals.
+- Primitive values and interpreter.
+- Basic semantic checks (function existence/arity, names, mutability, main entry).
+- Static primitive inference/operator validation in `typecheck.rs`, including typed local declarations, parameters, call arguments, explicit return types and conservative all-path return-flow checks for annotated non-Nil functions.
+- Runtime and static-checker lexical scopes for blocks, conditional branches and loop iterations, including legal inner-block shadowing and outer mutable binding updates.
+- Target-independent stack IR lowering with local slots, calls, print, arithmetic, short-circuit branches, conditional/loop jumps and returns.
+- Executable reference IR virtual machine with local frames, function calls, stack checks, jump validation, execution fuel and recursion-depth limits.
+- CLI commands `run`, `check`, `tokens`, `ast`, `ir`, and `ir-run`.
+- Typed HIR API (`compile_to_hir`) and `hir` CLI inspection command (verified below; checkpoint commit pending).
+- Unit tests and hello example.
+
+## Recovery and verification checkpoint (2026-11-07)
+- Branch `feat/compiler-foundation` was at `4e48b38` and tracked `origin/feat/compiler-foundation`; the local baseline changes were reviewed and recorded in commit `bb4a99f` (`feat: preserve typed bootstrap checks and IR VM`).
+- Worktree changes covered the IR VM, type checking, interpreter scopes, CLI exposure, and tests. They passed `cargo fmt --all -- --check`, `cargo test --workspace` (32 passed), and `cargo build --workspace` before checkpointing.
+- `examples/hello.avq` ran successfully through both `run` and `ir-run`. Both files under `tests/compile-fail/` exited with failure as expected.
+- Six pre-existing stashes were inspected and left intact; their changes overlap earlier versions of the recovered lexer/parser, scope, type-checker, and IR work. No stash was applied or dropped.
+- Added `language-specification.md` to distinguish accepted bootstrap semantics from planned, unimplemented design choices.
+- Recorded the user's explicit requirement for a distinct Averqun language identity; an alternative syntax extension is implemented while the original bootstrap syntax remains accepted for compatibility.
+- Implemented the first alternative-syntax subset in the lexer and parser (`weave`, bracketed parameter lists, `gives`, `kept`/`live`, `:=`, `yield`, `when`/`otherwise`, `again while`, `show`, and `name!{...}` calls). `examples/weave-hello.avq` passes through interpreter and IR VM; differential tests cover loop/branch behavior in the new form. Legacy forms remain accepted during the transition.
+- Added captured-output APIs for the interpreter and IR VM and aligned their call-depth limits. Differential coverage compares results and printed lines across recursion, branching, loops, nested shadowing, and short-circuit evaluation.
+- After these changes, `cargo fmt --all -- --check`, `cargo test --workspace` (33 passed), `cargo build --workspace`, `git diff --check`, and interpreter/IR execution of `examples/hello.avq` all passed.
+- The alternative syntax subset now has 34 passing workspace tests, including differential execution, Clippy with warnings denied, and direct execution of `examples/weave-hello.avq` through both interpreter and IR VM.
+- GitHub push and PR update have not been attempted; the configured remote is `origin`.
+- At the user's direction, the working product name is now **Averqun**. The Rust package/binary and local source extension have been renamed; the hosted repository is still `github.com/isaacokubi/nexa` because no GitHub CLI or repository-management connection is available in this environment.
+- `Averqun` is an un-cleared working name. Preliminary exact-name web searches did not surface an obvious programming-language/software project, but professional clearance remains a pre-release task.
+
+## Compiler foundation milestone: IR validation (2026-11-07)
+- Added a public IR validator and made the IR VM validate modules before execution. It checks duplicate/missing entry functions, entry arity, parameter/local frame sizes, reachable stack effects and joins, local indices, supported operators, call targets and arity, jump targets, and return stack shape.
+- Added malformed-module tests for frame/local errors, missing callees, invalid jumps, underflow, and incorrect return depth; lowered-program validation is covered too.
+- Fixed IR lowering for output statements to discard the output operation's unit result. Before this correction, repeated output accumulated values and functions could return with an invalid operand stack.
+- Baseline before this change: formatting clean, 34 workspace tests passed, build succeeded, and legacy/alternative examples ran in both execution paths.
+- After this change: formatting clean, 36 workspace tests passed, build succeeded, `examples/hello.avq` and `examples/weave-hello.avq` executed through `ir-run`, and `git diff --check` passed.
+- The Averqun rename and IR validation milestone were committed as `570f057` and pushed to `origin/feat/compiler-foundation`. The six older stashes remain untouched.
+
+## Type-system milestone: inferred function returns (2026-11-07)
+- Added conservative return-type inference for unannotated functions, including branch/block/loop returns and propagation through calls to functions whose return types can be resolved.
+- Incompatible return types and return types that remain unresolved now fail compilation; users can state an explicit return annotation for unresolved parameters or recursive cycles.
+- Inferred return types now participate in call argument, initializer, assignment, and explicit return checks, and non-Nil inferred functions use definite-return analysis.
+- Added tests for successful inference, call-site mismatch rejection, conflicting branches, unresolved parameter returns, and annotated identity functions.
+- Baseline at `570f057`: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, and `cargo test --workspace` all passed (36 tests).
+- After this change: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, and `cargo test --workspace` passed (38 tests); `cargo clippy --workspace --all-targets -- -D warnings` exited successfully. Clippy emitted only Rust incremental dep-graph warnings about empty memory maps in existing `target/` data. Both `.avq` examples ran through interpreter and IR VM. All three compile-fail fixtures, including inferred-return mismatch, were rejected by `averqun check` as expected.
+- Cross-platform CI was not available in this local environment. Commit and push for this milestone are pending.
+- Latest committed checkpoint remains `570f057`; the type-inference work is currently uncommitted.
+
+## Not implemented
+- Expanded type syntax and a complete, sound static type system; current HIR carries only Number, String, Bool, and Nil, after rejecting unresolved inference.
+- Integer widths, overflow modes, generics, traits, structs, enums, pattern matching.
+- Ownership/borrow/lifetime checking and destructor semantics.
+- Full typed MIR, optimization pipeline, LLVM backend, object/executable emission.
+- Runtime ABI, native allocator, platform FFI.
+- Modules/import resolution and package manager.
+- Complete standard library.
+- Async runtime and concurrency.
+- Formatter, debugger, LSP, test runner, docs website.
+- Fuzzing, benchmarks, full platform CI and release signing.
+
+## Feature status
+
+| Feature area | Status | Evidence / remaining work |
+| --- | --- | --- |
+| Lexer, parser, primitive AST | TESTED | Nesting and operator-chain limits; no syntax recovery |
+| Basic name/scope/mutability checks | TESTED | Local IDs/spans now represented in typed HIR; module resolution absent |
+| Primitive type checking | TESTED | Rejects unresolved expressions and produces HIR for four primitive types |
+| Typed HIR | TESTED | Typed expression tree, function/local IDs, mutability, spans |
+| Typed HIR to stack IR | IN PROGRESS | Production lowerer consumes HIR and checks types, IDs, scopes, returns and generated IR |
+| Stack IR validation and VM | TESTED | Structural/stack verification before execution; no optimizer or native backend |
+| Interpreter | TESTED | Basic semantics and resource bounds; aggregates/closures/errors absent |
+| Native backend, modules, package manager, standard library, concurrency, tooling | NOT STARTED | See release gates and roadmap |
+
+## Type-system milestone: parameter inference (2026-11-07)
+- Function signatures now represent resolved parameter types rather than syntax annotations alone. Omitted parameter types are inferred from known call arguments across the program alongside return-type inference.
+- Constraint propagation runs to a fixed point so wrappers and call graphs with forward declarations can pass inferred types through multiple functions.
+- Parameters without any inferable call type, and parameters called with conflicting concrete types, are rejected. Inferred parameters are used while checking each function body and at call sites.
+- Added tests for inferred arithmetic parameters, forward/cross-function propagation, conflicting callers, and unresolved uncalled parameters.
+- Verification: formatting, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (39 tests), Clippy with warnings denied, and `git diff --check` passed. Both examples ran through interpreter and IR VM; all three compile-fail fixtures were rejected by the CLI.
+- Committed and pushed as `3294782` (`feat(types): infer parameter types from call sites`).
+
+## Type-system hardening: reject unresolved expression types (2026-11-07)
+- Added a recursive final expression-validation pass. It verifies nested operands and call arguments before statement/type checks, so no `Unknown` result can silently pass through a typed local, condition, assignment, call, return, print, or discarded expression.
+- `Unknown` remains available only while collecting inference constraints; final checking rejects any expression still unresolved after parameter and return fixed-point inference.
+- Verification: formatting, check, build, 39 workspace tests, Clippy with warnings denied, and `git diff --check` passed. Both examples ran through interpreter and IR VM; all compile-fail fixtures remained rejected.
+- Latest commit is `3294782`; this hardening work is uncommitted.
+
+## Diagnostics milestone: expression spans through execution (2026-11-07)
+- Added source spans to all AST expression variants, constructed from source tokens and expression bounds.
+- Type inference/type checking, lexical name checks, interpreter runtime failures, IR lowering errors, and IR VM instruction failures now use expression-level locations. IR functions carry a source span per instruction, and the verifier checks that the location table is complete.
+- Added regression tests asserting exact line/column for type errors, undefined names, interpreter division by zero, IR lowering failures, and IR VM division by zero.
+- Verification: fmt, check, build, 43 workspace tests, Clippy with warnings denied, and `git diff --check` passed. Both examples ran through interpreter and IR VM; all compile-fail fixtures were rejected with non-placeholder source locations where the error is expression-based.
+- Latest pushed commit is `b904b0b`; span work is uncommitted pending checkpoint.
+
+## Next implementation task
+
+Finish typed-HIR-to-stack-IR regression and CLI verification, then start complete type-system expansion.
+
+## Parser safety milestone (2026-11-07)
+- Added a 128-level recursion limit for nested expressions/unary operators and nested blocks, plus a 128-operator per-precedence chain limit to bound left-nested AST depth. Excess input produces a source-positioned diagnostic rather than risking process stack exhaustion in later compiler passes.
+- `Parser::new` now appends EOF for external token streams that omit it, and the parser handles an empty token vector without indexing or panicking.
+- Added tests for all depth limits and EOF normalization.
+- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (47 passed), `cargo clippy --workspace --all-targets -- -D warnings`, `git diff --check`, and both examples via `run` and `ir-run` passed.
+- Recursive-depth/EOF work is committed as `b780540`; operator-chain hardening is committed as `3b07377`.
+- Next: introduce typed HIR with stable resolved primitive type identities. Native backend, full types, ownership, modules/packages, standard library, async, tooling, fuzzing, and releases remain incomplete.
+
+## Declaration diagnostic spans (2026-11-07)
+- Declaration names and assignment targets now carry spans in the AST. Duplicate bindings, invalid type annotations, unresolved assignment targets, and immutable assignment errors report those locations in static checks and interpreter execution.
+- Added exact line/column regression checks for these diagnostics, including annotation errors raised during fixed-point inference.
+- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (48 passed), Clippy with warnings denied, `git diff --check`, and both examples via `run` and `ir-run` passed.
+- Committed and pushed as `7c6e14e` (`feat(diagnostics): preserve declaration source spans`).
+
+## Typed HIR milestone (2026-11-07)
+- Added typed HIR structures for functions, primitive-typed expressions, locals, statements, function calls and built-in output. Local references resolve to per-function `LocalId`s; function calls resolve to `FunctionId`s. HIR keeps mutability and declaration/expression/function spans.
+- Added `compile_to_hir` and `averqun hir FILE`. Invalid programs are rejected before HIR construction. The interpreter continues to consume AST; production stack IR lowering has since moved to HIR.
+- Added positive HIR ID/type/scope/span tests and a negative test proving type errors prevent HIR generation.
+- Verification: formatting, check, build, 50 workspace tests, Clippy with warnings denied, and diff check passed. Both examples successfully emitted HIR and ran through interpreter and IR VM. All three compile-fail fixtures remained rejected.
+- Committed and pushed as `13744ef` (`feat(hir): add typed intermediate representation`).
+
+## Typed HIR to stack IR milestone (2026-11-07)
+- The production `ir::lower` now type-checks to HIR and lowers HIR directly. The old direct AST lowerer is compiled only in unit tests for differential comparison.
+- HIR lowering resolves local IDs to slots, resolves function IDs to calls, preserves spans, handles short-circuiting, blocks, branches, loops, calls, output, assignment and returns. It rejects malformed local/function IDs, unknown or inconsistent types, immutable writes, invalid returns and generated IR that fails the existing verifier.
+- The `check`, `ir`, and `ir-run` CLI paths now traverse HIR. Positive differential coverage combines alternative syntax, recursion, mutation, loops and short-circuit division-by-zero behavior. Negative tests mutate HIR to ensure invalid references, types, writes and return flow are rejected.
+- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (53 passed), Clippy with warnings denied, `git diff --check`, both examples through HIR generation/interpreter/IR VM, and all three compile-fail fixtures were verified. This checkpoint is currently uncommitted.
+
+## Accuracy rule
+A feature is considered implemented only when code, tests, documentation, and a verified CI/build result support the claim. Roadmap completion is not a substitute for these artifacts.
