@@ -12,13 +12,15 @@ This status is tied to the current repository branch and must not be confused wi
 - Basic semantic checks (function existence/arity, names, mutability, main entry).
 - Static primitive inference/operator validation in `typecheck.rs`, including typed local declarations, parameters, call arguments, explicit return types and all-path return checks for annotated non-Nil functions.
 - Runtime and static-checker lexical scopes for blocks, conditional branches and loop iterations, including legal inner-block shadowing and outer mutable binding updates.
+- Target-independent stack IR lowering with local slots, calls, print, arithmetic, short-circuit branches, conditional/loop jumps and returns.
+- CLI commands `run`, `check`, `tokens`, `ast`, and `ir`.
 - Unit tests and hello example.
 
 ## Not implemented
 - Declared type AST/HIR and complete signature/return checking.
 - Integer widths, overflow modes, generics, traits, structs, enums, pattern matching.
 - Ownership/borrow/lifetime checking and destructor semantics.
-- MIR, optimization pipeline, LLVM backend, object/executable emission.
+- Full typed MIR, optimization pipeline, IR execution engine, LLVM backend, object/executable emission.
 - Runtime ABI, native allocator, platform FFI.
 - Modules/import resolution and package manager.
 - Complete standard library.
