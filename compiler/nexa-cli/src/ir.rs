@@ -239,6 +239,142 @@ pub fn lower(program: &Program) -> Result<ModuleIr, Diagnostic> {
     Ok(module)
 }
 
+
+/// Execute a lowered module with the reference stack-machine runtime.
+///
+/// The VM deliberately shares the bootstrap interpreter's value and operator
+/// semantics. It is a correctness/reference backend, not a native code backend.
+pub fn execute(module: &ModuleIr) -> Result<Value, Diagnostic> {
+    let functions: HashMap<String, FunctionIr> = module.functions.iter()
+        .cloned().map(|function| (function.name.clone(), function)).collect();
+    if !functions.contains_key("main") {
+        return Err(error("IR module has no main function", Span { start: 0, end: 0, line: 1, column: 1 }));
+    }
+    let mut fuel = 1_000_000u64;
+    execute_function("main", Vec::new(), &functions, &mut fuel, 0)
+}
+
+fn execute_function(
+    name: &str,
+    arguments: Vec<Value>,
+    functions: &HashMap<String, FunctionIr>,
+    fuel: &mut u64,
+    depth: usize,
+) -> Result<Value, Diagnostic> {
+    let span = Span { start: 0, end: 0, line: 1, column: 1 };
+    if depth >= 64 {
+        return Err(error("maximum IR call depth exceeded", span));
+    }
+    let function = functions.get(name)
+        .ok_or_else(|| error(format!("undefined IR function '{name}'"), span))?;
+    if arguments.len() != function.parameter_count {
+        return Err(error(format!(
+            "IR function '{name}' expects {} arguments, got {}",
+            function.parameter_count, arguments.len()
+        ), span));
+    }
+    let mut locals = vec![Value::Nil; function.local_count as usize];
+    for (index, value) in arguments.into_iter().enumerate() {
+        locals[index] = value;
+    }
+    let mut stack: Vec<Value> = Vec::new();
+    let mut pc = 0usize;
+    while pc < function.instructions.len() {
+        if *fuel == 0 {
+            return Err(error("IR execution limit reached", span));
+        }
+        *fuel -= 1;
+        let instruction = &function.instructions[pc];
+        pc += 1;
+        match instruction {
+            Instruction::Constant(value) => stack.push(value.clone()),
+            Instruction::LoadLocal(slot) => {
+                let value = locals.get(*slot as usize)
+                    .ok_or_else(|| error(format!("invalid local slot {slot}"), span))?;
+                stack.push(value.clone());
+            }
+            Instruction::StoreLocal(slot) => {
+                let value = stack.pop().ok_or_else(|| error("IR stack underflow on store", span))?;
+                let destination = locals.get_mut(*slot as usize)
+                    .ok_or_else(|| error(format!("invalid local slot {slot}"), span))?;
+                *destination = value;
+            }
+            Instruction::Unary(operator) => {
+                let value = stack.pop().ok_or_else(|| error("IR stack underflow on unary operation", span))?;
+                let result = match operator {
+                    TokenKind::Bang => Value::Bool(!super::truth(&value)),
+                    TokenKind::Minus => Value::Number(-super::num(value)?),
+                    _ => return Err(error("unsupported IR unary operator", span)),
+                };
+                stack.push(result);
+            }
+            Instruction::Binary(operator) => {
+                let right = stack.pop().ok_or_else(|| error("IR stack underflow on binary operation", span))?;
+                let left = stack.pop().ok_or_else(|| error("IR stack underflow on binary operation", span))?;
+                stack.push(super::binary(left, operator, right)?);
+            }
+            Instruction::Call { function: callee, arguments: count } => {
+                if stack.len() < *count {
+                    return Err(error("IR stack underflow on call", span));
+                }
+                let values = stack.split_off(stack.len() - count);
+                let result = execute_function(callee, values, functions, fuel, depth + 1)?;
+                stack.push(result);
+            }
+            Instruction::Print { arguments: count } => {
+                if stack.len() < *count {
+                    return Err(error("IR stack underflow on print", span));
+                }
+                let values = stack.split_off(stack.len() - count);
+                for value in values {
+                    println!("{value}");
+                }
+                stack.push(Value::Nil);
+            }
+            Instruction::Pop => {
+                stack.pop().ok_or_else(|| error("IR stack underflow on pop", span))?;
+            }
+            Instruction::Jump(target) => {
+                if *target > function.instructions.len() {
+                    return Err(error("IR jump target is out of bounds", span));
+                }
+                pc = *target;
+            }
+            Instruction::JumpIfFalse(target) => {
+                let condition = stack.pop().ok_or_else(|| error("IR stack underflow on conditional jump", span))?;
+                if !super::truth(&condition) {
+                    if *target > function.instructions.len() {
+                        return Err(error("IR jump target is out of bounds", span));
+                    }
+                    pc = *target;
+                }
+            }
+            Instruction::JumpIfFalseKeep(target) => {
+                let condition = stack.last().ok_or_else(|| error("IR stack underflow on short-circuit jump", span))?;
+                if !super::truth(condition) {
+                    if *target > function.instructions.len() {
+                        return Err(error("IR jump target is out of bounds", span));
+                    }
+                    pc = *target;
+                }
+            }
+            Instruction::JumpIfTrueKeep(target) => {
+                let condition = stack.last().ok_or_else(|| error("IR stack underflow on short-circuit jump", span))?;
+                if super::truth(condition) {
+                    if *target > function.instructions.len() {
+                        return Err(error("IR jump target is out of bounds", span));
+                    }
+                    pc = *target;
+                }
+            }
+            Instruction::Return => {
+                return stack.pop().ok_or_else(|| error("IR stack underflow on return", span));
+            }
+        }
+    }
+    Err(error(format!("IR function '{name}' reached the end without return"), span))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,6 +384,38 @@ mod tests {
         let tokens = Lexer::new(source).tokenize()?;
         let program = Parser::new(tokens).parse()?;
         lower(&program)
+    }
+
+
+    #[test]
+    fn executes_lowered_arithmetic_and_locals() {
+        let module = lower_source("fn main(){let answer=(6*7)+1;return answer;}").unwrap();
+        assert_eq!(execute(&module).unwrap(), Value::Number(43.0));
+    }
+
+    #[test]
+    fn executes_calls_and_control_flow() {
+        let module = lower_source(
+            "fn twice(x:Number)->Number{return x*2;} fn main(){var n=0;while n<3{n=n+1;}if n==3{return twice(n);}else{return 0;}}"
+        ).unwrap();
+        assert_eq!(execute(&module).unwrap(), Value::Number(6.0));
+    }
+
+    #[test]
+    fn executes_short_circuit_without_evaluating_right_side() {
+        let module = lower_source(
+            "fn fail()->Bool{return 1/0==0;} fn main(){if false && fail(){return 1;}if true || fail(){return 9;}return 0;}"
+        ).unwrap();
+        assert_eq!(execute(&module).unwrap(), Value::Number(9.0));
+    }
+
+    #[test]
+    fn rejects_malformed_ir_stack_operations() {
+        let module = ModuleIr { functions: vec![FunctionIr {
+            name: "main".into(), parameter_count: 0, local_count: 0,
+            instructions: vec![Instruction::Pop, Instruction::Constant(Value::Nil), Instruction::Return],
+        }] };
+        assert!(execute(&module).is_err());
     }
 
     #[test]
