@@ -23,7 +23,7 @@ fn infer(e:&Expr,s:&Scope,fs:&HashMap<String,Signature>)->Result<Type,Diagnostic
  }
 }
 fn declared_type(name:&str)->Result<Type,Diagnostic>{match name{"Number"=>Ok(Type::Number),"String"=>Ok(Type::String),"Bool"=>Ok(Type::Bool),"Nil"=>Ok(Type::Nil),_=>Err(error(format!("unknown type '{name}'")))}}
-fn stmts(b:&[Stmt],s:&mut Scope,fs:&HashMap<String,Vec<Option<String>>>,ret:Option<Type>)->Result<(),Diagnostic>{for x in b{match x{
+fn stmts(b:&[Stmt],s:&mut Scope,fs:&HashMap<String,Signature>,ret:Option<Type>)->Result<(),Diagnostic>{for x in b{match x{
  Stmt::TypedLet(n,name,e,_)=>{let expected=declared_type(name)?;let actual=infer(e,s,fs)?;if actual!=expected&&actual!=Type::Unknown{return Err(error(format!("cannot initialize {name} variable '{n}' with {actual}")))}if s.contains_key(n){return Err(error(format!("'{n}' already declared in this scope")))}s.insert(n.clone(),expected);},
  Stmt::While(c,b)=>{let t=infer(c,s,fs)?;if t!=Type::Bool&&t!=Type::Unknown{return Err(error(format!("while condition must be Bool, found {t}")))}let mut x=s.clone();stmts(b,&mut x,fs,ret)?;},
  Stmt::Let(n,e,_)=>{let t=infer(e,s,fs)?;if s.contains_key(n){return Err(error(format!("'{n}' already declared in this scope")))}s.insert(n.clone(),t);},
