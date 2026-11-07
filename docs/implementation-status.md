@@ -23,9 +23,11 @@ This status is tied to the current repository branch and must not be confused wi
 - `examples/hello.nexa` ran successfully through both `run` and `ir-run`. Both files under `tests/compile-fail/` exited with failure as expected.
 - Six pre-existing stashes were inspected and left intact; their changes overlap earlier versions of the recovered lexer/parser, scope, type-checker, and IR work. No stash was applied or dropped.
 - Added `language-specification.md` to distinguish accepted bootstrap semantics from planned, unimplemented design choices.
-- Recorded the user's explicit requirement for a distinct NEXA language identity and a proposed, unimplemented next-version syntax direction. The existing bootstrap syntax remains documented as current behavior.
+- Recorded the user's explicit requirement for a distinct NEXA language identity; an alternative syntax extension is implemented while the original bootstrap syntax remains accepted for compatibility.
+- Implemented the first alternative-syntax subset in the lexer and parser (`weave`, bracketed parameter lists, `gives`, `kept`/`live`, `:=`, `yield`, `when`/`otherwise`, `again while`, `show`, and `name!{...}` calls). `examples/weave-hello.nexa` passes through interpreter and IR VM; differential tests cover loop/branch behavior in the new form. Legacy forms remain accepted during the transition.
 - Added captured-output APIs for the interpreter and IR VM and aligned their call-depth limits. Differential coverage compares results and printed lines across recursion, branching, loops, nested shadowing, and short-circuit evaluation.
 - After these changes, `cargo fmt --all -- --check`, `cargo test --workspace` (33 passed), `cargo build --workspace`, `git diff --check`, and interpreter/IR execution of `examples/hello.nexa` all passed.
+- The alternative syntax subset now has 34 passing workspace tests, including differential execution, Clippy with warnings denied, and direct execution of `examples/weave-hello.nexa` through both interpreter and IR VM.
 - GitHub push and PR update have not been attempted; the configured remote is `origin`.
 
 ## Not implemented

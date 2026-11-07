@@ -10,6 +10,7 @@ Current features
 - Interpreter: numbers, strings, booleans, nil, arithmetic, comparisons and short-circuit logic
 - CLI: `nexa run|check|tokens|ast|ir FILE`
 - Target-independent stack IR lowering and an executable reference stack VM (`nexa ir FILE` to inspect; `nexa ir-run FILE` to execute lowered IR). The VM is a correctness backend, not native code generation.
+- Experimental alternative source syntax using `weave`, `kept`/`live`, `yield`, `when`, `again while`, `show`, and `name!{arguments}`; see the tested [example](examples/weave-hello.nexa).
 - Bootstrap static type checks for primitive operators, declarations, parameters, call arguments and return annotations
 - Lexical block scopes with shadowing boundaries and assignment to visible outer mutable bindings
 - All-path return checking for explicitly annotated non-Nil functions

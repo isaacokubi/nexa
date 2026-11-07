@@ -1,7 +1,7 @@
 # NEXA Language Specification
 
-**Version:** 0.1.0 bootstrap specification  
-**Status:** normative for the implemented bootstrap subset; proposed design choices are marked **Planned** and are not accepted by the compiler.  
+**Version:** 0.1.0 bootstrap with an experimental 0.2 surface-syntax extension
+**Status:** normative for the implemented bootstrap subset; design choices are marked **Planned** and are not accepted by the compiler. The syntax in section 10 is implemented as an experimental alternative form.
 **Conformance:** this document describes the Rust frontend and interpreter in this repository. A program outside the implemented subset is not a NEXA 0.1 program, even if a future design below describes it.
 
 NEXA is a statically checked language in development. The current compiler is a small Rust bootstrap with an interpreter and a reference stack IR VM. It does not emit native code and does not yet enforce a sound whole-program type system or memory-safety model. The version number and feature labels in this document must not be read as release claims.
@@ -10,7 +10,7 @@ NEXA is a statically checked language in development. The current compiler is a 
 
 Source is UTF-8. Identifiers begin with an ASCII letter or `_` and continue with ASCII letters, digits, or `_`. Identifier spelling is case-sensitive. Whitespace is ignored. `//` starts a comment through the end of the line. There are no documentation comments.
 
-The reserved words are `fn`, `let`, `var`, `return`, `if`, `else`, `while`, `true`, `false`, `nil`, `print`, and `module`. They cannot be used as identifiers. `print` is a built-in statement-like callable token; other calls name functions.
+The legacy reserved words are `fn`, `let`, `var`, `return`, `if`, `else`, `while`, `true`, `false`, `nil`, `print`, and `module`. The experimental alternative form also reserves `weave`, `kept`, `live`, `yield`, `when`, `otherwise`, `again`, `show`, and `gives`. Reserved words cannot be used as identifiers. `print` is a legacy built-in callable token; `show` is the alternative form's output statement.
 
 Numbers contain decimal digits, optionally followed by `.` and one or more digits. The runtime represents them as IEEE-754 `f64`; there are no integer widths or numeric suffixes. Strings use double quotes and support `\\`, `\n`, `\r`, `\t`, and `\"`. Newlines inside a string and unsupported escapes are errors. Unescaped Unicode scalar values are retained as UTF-8.
 
@@ -129,9 +129,9 @@ fn identity<T>(value: T) -> T {
 }
 ```
 
-## 10. Distinctiveness work for the next language version
+## 10. Experimental alternative syntax
 
-The bootstrap grammar above deliberately records the syntax already in the parser; it is not a design target for the next major syntax revision. To make the language feel and read as its own language, future syntax work must start from NEXA's own semantics and vocabulary. Renaming `fn` or changing braces alone is not enough.
+The bootstrap grammar above records the original syntax retained by the parser for compatibility. An alternative form uses NEXA-specific vocabulary and call/declaration markers. This form is executable today but remains experimental while its grammar and migration policy are evaluated. New examples should prefer this form; the legacy form will not automatically be part of a stable release.
 
 An initial, unimplemented syntax direction is a **weave** declaration with bracketed parameter clauses, `gives` for a result type, `kept`/`live` bindings, `:=` initialization, `when`/`otherwise`, `again while`, `yield`, and `show`:
 
@@ -146,7 +146,22 @@ weave main[] {
 }
 ```
 
-This is a design sketch only. The next syntax milestone must review the full token inventory and grammar for consistency, usability, accessibility, and accidental resemblance; then implement a versioned parser and migration path before describing this form as supported. No existing language's tutorial text, examples, standard-library naming, documentation wording, or implementation code should be copied into NEXA. Similarity of common programming concepts or short syntax tokens is not, by itself, a legal conclusion.
+Its implemented additions to the grammar are:
+
+```ebnf
+weave_function = "weave" identifier "[" [ parameters ] "]"
+                 [ "gives" identifier ] block ;
+weave_variable = ("kept" | "live") identifier [ ":" identifier ] ":=" expression [ ";" ] ;
+weave_return   = "yield" [ expression ] [ ";" ] ;
+weave_branch   = "when" expression block [ "otherwise" block ] ;
+weave_loop     = "again" "while" expression block ;
+weave_output   = "show" expression [ ";" ] ;
+weave_call     = identifier "!" "{" [ arguments ] "}" ;
+```
+
+The alternative form keeps the same type and runtime semantics as the bootstrap form. `kept` is immutable; `live` is mutable. `yield` returns from a function. `when` requires a `Bool` condition, and `otherwise` is optional. `again while` has the same loop semantics as legacy `while`. `show` writes one value on its own output line.
+
+The lexer and parser currently implement these declarations, bindings, returns, calls, output statements, conditionals, and loops. The existing type checker and both execution paths handle their semantics. Other syntax remains as documented in the bootstrap grammar. The parser currently permits legacy and alternative forms in the same file; the compiler does not yet enforce a language-version declaration. Before stabilization, settle whether to remove legacy spelling, provide an automated migration, or maintain both forms. No existing language's tutorial text, examples, standard-library naming, documentation wording, or implementation code should be copied into NEXA. Similarity of common programming concepts or short syntax tokens is not, by itself, a legal conclusion.
 
 Distinctive syntax cannot by itself prevent legal disputes. Copyright can protect software expression while excluding ideas and methods of operation; names may raise separate trademark issues. A public software project already uses the name “Nexa” for a programming language at [nexa-lang.com](https://www.nexa-lang.com/). Before a public release, perform a professional name clearance in the intended jurisdictions and consider a different project name if advised. A web or database search is not legal clearance.
 

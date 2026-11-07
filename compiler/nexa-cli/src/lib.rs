@@ -43,12 +43,20 @@ pub enum TokenKind {
     Number(f64),
     String(String),
     Fn,
+    Weave,
     Let,
     Var,
+    Kept,
+    Live,
     Return,
+    Yield,
     If,
     Else,
+    When,
+    Otherwise,
     While,
+    Again,
+    Show,
     True,
     False,
     Nil,
@@ -70,11 +78,15 @@ pub enum TokenKind {
     AndAnd,
     OrOr,
     Arrow,
+    Gives,
     Colon,
+    ColonEq,
     Comma,
     Semi,
     LParen,
     RParen,
+    LBracket,
+    RBracket,
     LBrace,
     RBrace,
     Eof,
@@ -154,12 +166,21 @@ impl<'a> Lexer<'a> {
                 }
                 match &self.src[s..self.pos] {
                     "fn" => TokenKind::Fn,
+                    "weave" => TokenKind::Weave,
                     "let" => TokenKind::Let,
                     "var" => TokenKind::Var,
+                    "kept" => TokenKind::Kept,
+                    "live" => TokenKind::Live,
                     "return" => TokenKind::Return,
+                    "yield" => TokenKind::Yield,
                     "if" => TokenKind::If,
                     "else" => TokenKind::Else,
+                    "when" => TokenKind::When,
+                    "otherwise" => TokenKind::Otherwise,
                     "while" => TokenKind::While,
+                    "again" => TokenKind::Again,
+                    "show" => TokenKind::Show,
+                    "gives" => TokenKind::Gives,
                     "true" => TokenKind::True,
                     "false" => TokenKind::False,
                     "nil" => TokenKind::Nil,
@@ -217,11 +238,20 @@ impl<'a> Lexer<'a> {
                 match ch {
                     '(' => TokenKind::LParen,
                     ')' => TokenKind::RParen,
+                    '[' => TokenKind::LBracket,
+                    ']' => TokenKind::RBracket,
                     '{' => TokenKind::LBrace,
                     '}' => TokenKind::RBrace,
                     ',' => TokenKind::Comma,
                     ';' => TokenKind::Semi,
-                    ':' => TokenKind::Colon,
+                    ':' => {
+                        if self.peek() == Some('=') {
+                            self.advance();
+                            TokenKind::ColonEq
+                        } else {
+                            TokenKind::Colon
+                        }
+                    }
                     '+' => TokenKind::Plus,
                     '-' => {
                         if self.peek() == Some('>') {
@@ -419,17 +449,28 @@ impl Parser {
         Ok(Program { functions: fs })
     }
     fn function(&mut self) -> Result<Function, Diagnostic> {
-        let span = self.expect(&TokenKind::Fn, "expected 'fn'")?.span;
+        let woven = if self.eat(&TokenKind::Weave) {
+            true
+        } else {
+            self.expect(&TokenKind::Fn, "expected 'fn' or 'weave'")?;
+            false
+        };
+        let span = self.t[self.i - 1].span;
         let n = self.expect(&TokenKind::Ident(String::new()), "expected function name")?;
         let name = if let TokenKind::Ident(x) = n.kind {
             x
         } else {
             unreachable!()
         };
-        self.expect(&TokenKind::LParen, "expected '('")?;
+        let (left, right) = if woven {
+            (TokenKind::LBracket, TokenKind::RBracket)
+        } else {
+            (TokenKind::LParen, TokenKind::RParen)
+        };
+        self.expect(&left, "expected parameter-list opener")?;
         let mut params = Vec::new();
         let mut param_types = Vec::new();
-        if !self.check(&TokenKind::RParen) {
+        if !self.check(&right) {
             loop {
                 let p = self.expect(&TokenKind::Ident(String::new()), "expected parameter")?;
                 if let TokenKind::Ident(x) = p.kind {
@@ -458,8 +499,13 @@ impl Parser {
                 }
             }
         }
-        self.expect(&TokenKind::RParen, "expected ')'")?;
-        let return_type = if self.eat(&TokenKind::Arrow) {
+        self.expect(&right, "expected parameter-list closer")?;
+        let has_return_type = if woven {
+            self.eat(&TokenKind::Gives)
+        } else {
+            self.eat(&TokenKind::Arrow)
+        };
+        let return_type = if has_return_type {
             let t = self.expect(&TokenKind::Ident(String::new()), "expected return type")?;
             if let TokenKind::Ident(x) = t.kind {
                 Some(x)
@@ -489,8 +535,14 @@ impl Parser {
         Ok(b)
     }
     fn statement(&mut self) -> Result<Stmt, Diagnostic> {
-        if self.eat(&TokenKind::Let) || self.eat(&TokenKind::Var) {
-            let m = matches!(&self.t[self.i - 1].kind, TokenKind::Var);
+        let mutable = if self.eat(&TokenKind::Let) || self.eat(&TokenKind::Kept) {
+            Some(false)
+        } else if self.eat(&TokenKind::Var) || self.eat(&TokenKind::Live) {
+            Some(true)
+        } else {
+            None
+        };
+        if let Some(m) = mutable {
             let t = self.expect(&TokenKind::Ident(String::new()), "expected variable name")?;
             let n = if let TokenKind::Ident(x) = t.kind {
                 x
@@ -507,7 +559,12 @@ impl Parser {
             } else {
                 None
             };
-            self.expect(&TokenKind::Eq, "expected '='")?;
+            if !self.eat(&TokenKind::Eq) && !self.eat(&TokenKind::ColonEq) {
+                return Err(Diagnostic {
+                    message: "expected '=' or ':=' after binding".into(),
+                    span: self.cur().span,
+                });
+            }
             let e = self.expr()?;
             self.eat(&TokenKind::Semi);
             return Ok(if let Some(t) = annotation {
@@ -521,7 +578,13 @@ impl Parser {
             let b = self.block()?;
             return Ok(Stmt::While(c, b));
         }
-        if self.eat(&TokenKind::Return) {
+        if self.eat(&TokenKind::Again) {
+            self.expect(&TokenKind::While, "expected 'while' after 'again'")?;
+            let c = self.expr()?;
+            let b = self.block()?;
+            return Ok(Stmt::While(c, b));
+        }
+        if self.eat(&TokenKind::Return) || self.eat(&TokenKind::Yield) {
             let x = if self.check(&TokenKind::Semi) || self.check(&TokenKind::RBrace) {
                 None
             } else {
@@ -530,10 +593,10 @@ impl Parser {
             self.eat(&TokenKind::Semi);
             return Ok(Stmt::Return(x));
         }
-        if self.eat(&TokenKind::If) {
+        if self.eat(&TokenKind::If) || self.eat(&TokenKind::When) {
             let c = self.expr()?;
             let a = self.block()?;
-            let b = if self.eat(&TokenKind::Else) {
+            let b = if self.eat(&TokenKind::Else) || self.eat(&TokenKind::Otherwise) {
                 if self.eat(&TokenKind::If) {
                     vec![self.statement()?]
                 } else {
@@ -544,13 +607,18 @@ impl Parser {
             };
             return Ok(Stmt::If(c, a, b));
         }
+        if self.eat(&TokenKind::Show) {
+            let value = self.expr()?;
+            self.eat(&TokenKind::Semi);
+            return Ok(Stmt::Print(value));
+        }
         if self.check(&TokenKind::LBrace) {
             return Ok(Stmt::Block(self.block()?));
         }
         let x = self.expr()?;
         if let Expr::Var(ref n) = x {
             let name = n.clone();
-            if self.eat(&TokenKind::Eq) {
+            if self.eat(&TokenKind::Eq) || self.eat(&TokenKind::ColonEq) {
                 let v = self.expr()?;
                 self.eat(&TokenKind::Semi);
                 return Ok(Stmt::Assign(name, v));
@@ -643,9 +711,16 @@ impl Parser {
                 Ok(Expr::Call("print".into(), a))
             }
             TokenKind::Ident(n) => {
-                if self.eat(&TokenKind::LParen) {
+                let call_open = if self.eat(&TokenKind::LParen) {
+                    Some((TokenKind::RParen, "expected ')'"))
+                } else if self.eat(&TokenKind::Bang) && self.eat(&TokenKind::LBrace) {
+                    Some((TokenKind::RBrace, "expected '}' after woven call arguments"))
+                } else {
+                    None
+                };
+                if let Some((close, message)) = call_open {
                     let mut a = Vec::new();
-                    if !self.check(&TokenKind::RParen) {
+                    if !self.check(&close) {
                         loop {
                             a.push(self.expr()?);
                             if !self.eat(&TokenKind::Comma) {
@@ -653,7 +728,7 @@ impl Parser {
                             }
                         }
                     }
-                    self.expect(&TokenKind::RParen, "expected ')'")?;
+                    self.expect(&close, message)?;
                     Ok(Expr::Call(n, a))
                 } else {
                     Ok(Expr::Var(n))
@@ -1116,6 +1191,13 @@ mod tests {
     #[test]
     fn lexer_parser() {
         assert!(compile("fn main(){print(1+2);}").is_ok())
+    }
+    #[test]
+    fn parses_and_executes_weave_syntax() {
+        let program = compile(include_str!("../../../examples/weave-hello.nexa")).unwrap();
+        let (value, output) = Interpreter::new(program).run_captured().unwrap();
+        assert_eq!(value, Value::Nil);
+        assert_eq!(output, vec!["42"]);
     }
     #[test]
     fn executes() {

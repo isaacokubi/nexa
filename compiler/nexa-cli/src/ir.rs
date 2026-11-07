@@ -549,6 +549,7 @@ mod tests {
             "fn sum(n: Number)->Number{if n<=0{return 0;}else{return n+sum(n-1);}} fn main(){print(sum(5));}",
             "fn main(){var i=0;var total=0;while i<4{total=total+i;i=i+1;} {let total=\"inner\";print(total);} print(total);}",
             "fn side()->Bool{print(\"visited\");return true;} fn main(){let a=false&&side();let b=true||side();print(a,b);}",
+            "weave main[] { live count: Number := 0 again while count<3 { count := count+1 } when count==3 { show count } otherwise { show 0 } yield }",
         ];
 
         for source in programs {
