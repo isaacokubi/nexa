@@ -1,6 +1,8 @@
 # NEXA Documentation
 
-- [Language specification](specification.md) — current syntax and semantic baseline.
+- [Language specification](language-specification.md) — normative bootstrap subset and clearly separated planned design choices.
+- [Distinctive syntax direction](language-specification.md#10-distinctiveness-work-for-the-next-language-version) — initial proposal for an original next-version surface grammar.
+- [Bootstrap notes](specification.md) — earlier concise implementation snapshot.
 - [Architecture](architecture.md) — compiler stages and boundaries.
 - [Roadmap](roadmap.md) — planned implementation sequence.
 - [Getting started](getting-started.md) — build and run the bootstrap.

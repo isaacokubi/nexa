@@ -23,4 +23,4 @@ Build and test (Rust stable)
     cargo run -p nexa -- check examples/hello.nexa
     cargo run -p nexa -- ir examples/hello.nexa
 
-See [documentation index](docs/README.md), [specification](docs/specification.md), [type system](docs/type-system.md), [memory model](docs/memory-model.md), and [release gates](docs/release-readiness.md). Language semantics are evolving.
+See [documentation index](docs/README.md), [language specification](docs/language-specification.md), [type system](docs/type-system.md), [memory model](docs/memory-model.md), and [release gates](docs/release-readiness.md). Language semantics are evolving.

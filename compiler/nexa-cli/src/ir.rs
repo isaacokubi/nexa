@@ -316,6 +316,18 @@ pub fn lower(program: &Program) -> Result<ModuleIr, Diagnostic> {
 /// The VM deliberately shares the bootstrap interpreter's value and operator
 /// semantics. It is a correctness/reference backend, not a native code backend.
 pub fn execute(module: &ModuleIr) -> Result<Value, Diagnostic> {
+    execute_internal(module, false).map(|(value, _)| value)
+}
+
+/// Execute a module and return its printed lines alongside the result.
+pub fn execute_with_output(module: &ModuleIr) -> Result<(Value, Vec<String>), Diagnostic> {
+    execute_internal(module, true)
+}
+
+fn execute_internal(
+    module: &ModuleIr,
+    capture_output: bool,
+) -> Result<(Value, Vec<String>), Diagnostic> {
     let functions: HashMap<String, FunctionIr> = module
         .functions
         .iter()
@@ -334,7 +346,17 @@ pub fn execute(module: &ModuleIr) -> Result<Value, Diagnostic> {
         ));
     }
     let mut fuel = 1_000_000u64;
-    execute_function("main", Vec::new(), &functions, &mut fuel, 0)
+    let mut output = Vec::new();
+    let value = execute_function(
+        "main",
+        Vec::new(),
+        &functions,
+        &mut fuel,
+        0,
+        &mut output,
+        capture_output,
+    )?;
+    Ok((value, output))
 }
 
 fn execute_function(
@@ -343,6 +365,8 @@ fn execute_function(
     functions: &HashMap<String, FunctionIr>,
     fuel: &mut u64,
     depth: usize,
+    output: &mut Vec<String>,
+    capture_output: bool,
 ) -> Result<Value, Diagnostic> {
     let span = Span {
         start: 0,
@@ -350,7 +374,7 @@ fn execute_function(
         line: 1,
         column: 1,
     };
-    if depth >= 64 {
+    if depth >= super::MAX_CALL_DEPTH {
         return Err(error("maximum IR call depth exceeded", span));
     }
     let function = functions
@@ -424,7 +448,15 @@ fn execute_function(
                     return Err(error("IR stack underflow on call", span));
                 }
                 let values = stack.split_off(stack.len() - *count);
-                let result = execute_function(callee, values, functions, fuel, depth + 1)?;
+                let result = execute_function(
+                    callee,
+                    values,
+                    functions,
+                    fuel,
+                    depth + 1,
+                    output,
+                    capture_output,
+                )?;
                 stack.push(result);
             }
             Instruction::Print { arguments: count } => {
@@ -433,7 +465,12 @@ fn execute_function(
                 }
                 let values = stack.split_off(stack.len() - count);
                 for value in values {
-                    println!("{value}");
+                    let line = value.to_string();
+                    if capture_output {
+                        output.push(line);
+                    } else {
+                        println!("{line}");
+                    }
                 }
                 stack.push(Value::Nil);
             }
@@ -503,6 +540,24 @@ mod tests {
         let tokens = Lexer::new(source).tokenize()?;
         let program = Parser::new(tokens).parse()?;
         lower(&program)
+    }
+
+    #[test]
+    fn interpreter_and_ir_vm_match_values_and_output() {
+        let programs = [
+            "fn main(){let x=6*7;print(x);return x;}",
+            "fn sum(n: Number)->Number{if n<=0{return 0;}else{return n+sum(n-1);}} fn main(){print(sum(5));}",
+            "fn main(){var i=0;var total=0;while i<4{total=total+i;i=i+1;} {let total=\"inner\";print(total);} print(total);}",
+            "fn side()->Bool{print(\"visited\");return true;} fn main(){let a=false&&side();let b=true||side();print(a,b);}",
+        ];
+
+        for source in programs {
+            let program = crate::compile(source).unwrap();
+            let module = lower(&program).unwrap();
+            let expected = crate::Interpreter::new(program).run_captured().unwrap();
+            let actual = execute_with_output(&module).unwrap();
+            assert_eq!(actual, expected, "source: {source}");
+        }
     }
 
     #[test]

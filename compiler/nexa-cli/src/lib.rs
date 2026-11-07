@@ -1,6 +1,8 @@
 pub mod ir;
 use std::{collections::HashMap, fmt, fs};
 
+pub(crate) const MAX_CALL_DEPTH: usize = 64;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
@@ -715,6 +717,8 @@ pub struct Interpreter {
     f: HashMap<String, Function>,
     fuel: u64,
     depth: usize,
+    output: Vec<String>,
+    capture_output: bool,
 }
 impl Interpreter {
     pub fn new(p: Program) -> Self {
@@ -725,16 +729,37 @@ impl Interpreter {
                 .collect(),
             fuel: 1_000_000,
             depth: 0,
+            output: Vec::new(),
+            capture_output: false,
         }
     }
     pub fn run(&mut self) -> Result<Value, Diagnostic> {
+        self.output.clear();
+        self.capture_output = false;
         self.call("main", vec![])
+    }
+    /// Execute the program and return its printed lines alongside the result.
+    /// This is useful for embedding and for checking runtime backend parity.
+    pub fn run_captured(&mut self) -> Result<(Value, Vec<String>), Diagnostic> {
+        self.output.clear();
+        self.capture_output = true;
+        let result = self.call("main", vec![]);
+        self.capture_output = false;
+        result.map(|value| (value, std::mem::take(&mut self.output)))
+    }
+    fn print_value(&mut self, value: Value) {
+        let line = value.to_string();
+        if self.capture_output {
+            self.output.push(line);
+        } else {
+            println!("{line}");
+        }
     }
     fn call(&mut self, n: &str, a: Vec<Value>) -> Result<Value, Diagnostic> {
         if self.fuel == 0 {
             return Err(diag("", "execution limit reached"));
         }
-        if self.depth >= 32 {
+        if self.depth >= MAX_CALL_DEPTH {
             return Err(diag("", "maximum function call depth exceeded"));
         }
         self.fuel -= 1;
@@ -794,7 +819,10 @@ impl Interpreter {
                     let v = self.eval(x, e)?;
                     e.assign(n, v)?
                 }
-                Stmt::Print(x) => println!("{}", self.eval(x, e)?),
+                Stmt::Print(x) => {
+                    let line = self.eval(x, e)?;
+                    self.print_value(line);
+                }
                 Stmt::Expr(x) => {
                     self.eval(x, e)?;
                 }
@@ -852,7 +880,7 @@ impl Interpreter {
                     .collect::<Result<Vec<_>, _>>()?;
                 if n == "print" {
                     for x in v {
-                        println!("{x}")
+                        self.print_value(x)
                     }
                     Ok(Value::Nil)
                 } else {
