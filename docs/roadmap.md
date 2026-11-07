@@ -6,7 +6,8 @@ Averqun Roadmap
 - [x] AST/parser for function, block, variable, return, if and expression subset
 - [x] Interpreter and initial unit tests
 - [x] Bootstrap lexical name, scope, mutability, primitive annotation, operator, return-flow, and inferable function return checks
-- [ ] Sound type checking for all expressions; replace permissive Unknown handling and attach source spans to AST/semantic diagnostics
+- [x] Reject unresolved expression types after fixed-point parameter/return inference; preserve expression spans through type checking and execution
+- [ ] Declaration/function source spans and typed HIR with stable resolved type identities
 - [ ] Typed HIR and multi-file/module name resolution
 - [ ] Compile-pass/compile-fail harness and diagnostic snapshots
 - [ ] Specify and implement integer widths, overflow, float semantics, ABI and target triples
@@ -17,5 +18,6 @@ Averqun Roadmap
 - [ ] Formatter, package manager, LSP, debugger and testing framework
 - [ ] Linux/Windows/macOS CI, fuzzing and performance benchmarks
 - [ ] Complete reference docs, tutorials and stable release process
+- [x] Bound recursive parser nesting and safely normalize externally supplied token streams
 
 A feature is complete only when implementation, tests, docs and compatibility guarantees exist.

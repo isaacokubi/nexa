@@ -27,4 +27,4 @@ cargo run -p averqun -- run examples/hello.avq
 
 A successful bootstrap check does not establish native compilation, memory safety, or production readiness.
 
-Current state: inferred parameter and return checking now has fixed-point propagation, negative cases, and a CLI compile-fail fixture. Release readiness remains blocked by the unchecked gates above, including typed HIR, aggregate/generic types, native code generation, and full platform validation.
+Current state: inferred parameter and return checking has fixed-point propagation, expression checking rejects unresolved types, expression spans reach both execution paths, and parser nesting is bounded. Local verification on 2026-11-07 passed formatting, check, build, 46 workspace tests, Clippy with warnings denied, both examples under interpreter and IR VM, and `git diff --check`. Release readiness remains blocked by the unchecked gates above, including typed HIR, aggregate/generic types, native code generation, and full platform validation.

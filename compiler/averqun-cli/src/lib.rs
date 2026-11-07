@@ -424,10 +424,23 @@ pub struct Program {
 pub struct Parser {
     t: Vec<Token>,
     i: usize,
+    nesting: usize,
 }
+const MAX_PARSE_NESTING: usize = 128;
 impl Parser {
-    pub fn new(t: Vec<Token>) -> Self {
-        Self { t, i: 0 }
+    pub fn new(mut t: Vec<Token>) -> Self {
+        if !t.iter().any(|token| matches!(token.kind, TokenKind::Eof)) {
+            let span = t.last().map_or(Span::default(), |token| token.span);
+            t.push(Token {
+                kind: TokenKind::Eof,
+                span,
+            });
+        }
+        Self {
+            t,
+            i: 0,
+            nesting: 0,
+        }
     }
     fn cur(&self) -> &Token {
         &self.t[self.i]
@@ -559,6 +572,12 @@ impl Parser {
         })
     }
     fn block(&mut self) -> Result<Vec<Stmt>, Diagnostic> {
+        self.enter_nesting()?;
+        let result = self.block_inner();
+        self.nesting -= 1;
+        result
+    }
+    fn block_inner(&mut self) -> Result<Vec<Stmt>, Diagnostic> {
         self.expect(&TokenKind::LBrace, "expected '{'")?;
         let mut b = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
@@ -663,7 +682,20 @@ impl Parser {
         Ok(Stmt::Expr(x))
     }
     fn expr(&mut self) -> Result<Expr, Diagnostic> {
-        self.or()
+        self.enter_nesting()?;
+        let result = self.or();
+        self.nesting -= 1;
+        result
+    }
+    fn enter_nesting(&mut self) -> Result<(), Diagnostic> {
+        if self.nesting >= MAX_PARSE_NESTING {
+            return Err(Diagnostic {
+                message: format!("parser nesting limit ({MAX_PARSE_NESTING}) exceeded"),
+                span: self.cur().span,
+            });
+        }
+        self.nesting += 1;
+        Ok(())
     }
     fn chain(
         &mut self,
@@ -714,6 +746,12 @@ impl Parser {
         )
     }
     fn unary(&mut self) -> Result<Expr, Diagnostic> {
+        self.enter_nesting()?;
+        let result = self.unary_inner();
+        self.nesting -= 1;
+        result
+    }
+    fn unary_inner(&mut self) -> Result<Expr, Diagnostic> {
         if self.check(&TokenKind::Bang) {
             let operator = self.adv();
             let value = self.unary()?;
@@ -1243,6 +1281,29 @@ mod tests {
     #[test]
     fn lexer_parser() {
         assert!(compile("fn main(){print(1+2);}").is_ok())
+    }
+    #[test]
+    fn parser_adds_eof_to_external_token_streams() {
+        let tokens = Lexer::new("fn main() {}").tokenize().unwrap();
+        let mut parser = Parser::new(tokens[..tokens.len() - 1].to_vec());
+        assert!(parser.parse().is_ok());
+        assert!(Parser::new(Vec::new()).parse().is_ok());
+    }
+    #[test]
+    fn parser_rejects_excessive_expression_nesting_without_panicking() {
+        let source = format!(
+            "fn main(){{print({}1{});}}",
+            "(".repeat(512),
+            ")".repeat(512)
+        );
+        let diagnostic = compile(&source).unwrap_err();
+        assert!(diagnostic.message.contains("parser nesting limit"));
+    }
+    #[test]
+    fn parser_rejects_excessive_block_nesting_without_panicking() {
+        let source = format!("fn main(){{{} }}", "{".repeat(512));
+        let diagnostic = compile(&source).unwrap_err();
+        assert!(diagnostic.message.contains("parser nesting limit"));
     }
     #[test]
     fn parses_and_executes_weave_syntax() {

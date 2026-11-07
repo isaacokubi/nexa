@@ -96,7 +96,15 @@ This status is tied to the current repository branch and must not be confused wi
 
 ## Next implementation task
 
-Add precise spans to declaration/assignment/function diagnostics, then introduce a typed HIR boundary before expanding language syntax.
+Add precise spans to declaration/assignment/function diagnostics, then introduce a typed HIR boundary with resolved primitive type identities before expanding language syntax.
+
+## Parser safety milestone (2026-11-07)
+- Added a 128-level recursion limit for nested expressions/unary operators and nested blocks. Excess depth produces a source-positioned diagnostic rather than risking process stack exhaustion.
+- `Parser::new` now appends EOF for external token streams that omit it, and the parser handles an empty token vector without indexing or panicking.
+- Added tests for both depth limits and EOF normalization.
+- Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (46 passed), `cargo clippy --workspace --all-targets -- -D warnings`, `git diff --check`, and both examples via `run` and `ir-run` passed.
+- This milestone is currently uncommitted. The previous commit is `c102714`; push status has not been attempted.
+- Next: improve semantic declaration spans and introduce typed HIR. Native backend, full types, ownership, modules/packages, standard library, async, tooling, fuzzing, and releases remain incomplete.
 
 ## Accuracy rule
 A feature is considered implemented only when code, tests, documentation, and a verified CI/build result support the claim. Roadmap completion is not a substitute for these artifacts.
