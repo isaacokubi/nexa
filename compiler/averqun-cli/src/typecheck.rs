@@ -260,6 +260,35 @@ fn infer(e: &Expr, s: &Scope, fs: &HashMap<String, Signature>) -> Result<Type, D
     }
 }
 
+fn validate_expression(
+    expression: &Expr,
+    scope: &Scope,
+    functions: &HashMap<String, Signature>,
+) -> Result<Type, Diagnostic> {
+    match expression {
+        Expr::Lit(_) | Expr::Var(_) => {}
+        Expr::Unary(_, value) => {
+            validate_expression(value, scope, functions)?;
+        }
+        Expr::Binary(left, _, right) => {
+            validate_expression(left, scope, functions)?;
+            validate_expression(right, scope, functions)?;
+        }
+        Expr::Call(_, arguments) => {
+            for argument in arguments {
+                validate_expression(argument, scope, functions)?;
+            }
+        }
+    }
+    let ty = infer(expression, scope, functions)?;
+    if ty == Type::Unknown {
+        return Err(error(
+            "cannot infer expression type; add an explicit annotation",
+        ));
+    }
+    Ok(ty)
+}
+
 fn collect_call_constraints_expr(
     expression: &Expr,
     scope: &Scope,
@@ -387,8 +416,8 @@ fn stmts(
         match x {
             Stmt::TypedLet(n, name, e, _) => {
                 let expected = declared_type(name)?;
-                let actual = infer(e, s, fs)?;
-                if actual != expected && actual != Type::Unknown {
+                let actual = validate_expression(e, s, fs)?;
+                if actual != expected {
                     return Err(error(format!(
                         "cannot initialize {name} variable '{n}' with {actual}"
                     )));
@@ -399,14 +428,17 @@ fn stmts(
                 s.define(n.clone(), expected);
             }
             Stmt::While(c, b) => {
-                let t = infer(c, s, fs)?;
-                if t != Type::Bool && t != Type::Unknown {
+                let t = validate_expression(c, s, fs)?;
+                if t != Type::Bool {
                     return Err(error(format!("while condition must be Bool, found {t}")));
                 }
                 scoped_stmts(b, s, fs, ret)?;
             }
             Stmt::Let(n, e, _) => {
-                let t = infer(e, s, fs)?;
+                let t = validate_expression(e, s, fs)?;
+                if t == Type::Unknown {
+                    return Err(error(format!("cannot infer type of local '{n}'")));
+                }
                 if s.contains_current(n) {
                     return Err(error(format!("'{n}' already declared in this scope")));
                 }
@@ -416,22 +448,22 @@ fn stmts(
                 let old = s
                     .get(n)
                     .ok_or_else(|| error(format!("undefined variable '{n}'")))?;
-                let new = infer(e, s, fs)?;
-                if old != new && new != Type::Unknown {
+                let new = validate_expression(e, s, fs)?;
+                if old != new {
                     return Err(error(format!("cannot assign {new} to '{n}' of type {old}")));
                 }
             }
             Stmt::Print(e) | Stmt::Expr(e) => {
-                infer(e, s, fs)?;
+                validate_expression(e, s, fs)?;
             }
             Stmt::Return(e) => {
                 let actual = if let Some(e) = e {
-                    infer(e, s, fs)?
+                    validate_expression(e, s, fs)?
                 } else {
                     Type::Nil
                 };
                 if let Some(expected) = ret {
-                    if actual != expected && actual != Type::Unknown {
+                    if actual != expected {
                         return Err(error(format!(
                             "return type mismatch: expected {expected}, found {actual}"
                         )));
@@ -439,8 +471,8 @@ fn stmts(
                 }
             }
             Stmt::If(c, a, b) => {
-                let t = infer(c, s, fs)?;
-                if t != Type::Bool && t != Type::Unknown {
+                let t = validate_expression(c, s, fs)?;
+                if t != Type::Bool {
                     return Err(error(format!("if condition must be Bool, found {t}")));
                 }
                 scoped_stmts(a, s, fs, ret)?;
@@ -649,6 +681,9 @@ mod tests {
     #[test]
     fn infers_unannotated_parameters_from_calls() {
         assert!(c("fn double(value){return value*2;} fn main(){let n:Number=double(3);}").is_ok());
+        assert!(
+            c("fn identity(value){return value;} fn main(){let n:Number=identity(3);}").is_ok()
+        );
         assert!(c("fn relay(value){return answer(value);} fn answer(x:Number)->Number{return x;} fn main(){let n:Number=relay(4);}").is_ok());
         assert!(
             c("fn consume(value){print(value);} fn main(){consume(1);consume(\"one\");}").is_err()
