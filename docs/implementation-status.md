@@ -11,7 +11,7 @@ This status is tied to the current repository branch and must not be confused wi
 - Primitive values and interpreter.
 - Basic semantic checks (function existence/arity, names, mutability, main entry).
 - Static primitive inference/operator validation in `typecheck.rs`, including typed local declarations, parameters, call arguments, explicit return types and all-path return checks for annotated non-Nil functions.
-- Runtime lexical scopes for blocks, conditional branches and loop iterations, with outer mutable binding updates.
+- Runtime and static-checker lexical scopes for blocks, conditional branches and loop iterations, including legal inner-block shadowing and outer mutable binding updates.
 - Unit tests and hello example.
 
 ## Not implemented
