@@ -18,7 +18,7 @@ Lexical rules (implemented)
 Grammar subset
 -------------
     program      = { ["module", identifier, [";"]] function } EOF
-    function     = "fn", identifier, "(", [identifier,{",",identifier}], ")", ["->",identifier], block
+    function     = "fn", identifier, "(", [identifier,[":",identifier],{",",identifier,[":",identifier]}], ")", ["->",identifier], block
     block        = "{", {statement}, "}"
     statement    = ("let"|"var"), identifier, [":",identifier], "=", expression
                  | "return", [expression] | "if", expression, block, ["else",(block|statement)]
