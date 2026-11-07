@@ -1,0 +1,10 @@
+[package]
+name = "nexa"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "NEXA language bootstrap compiler and interpreter"
+
+[[bin]]
+name = "nexa"
+path = "src/main.rs"
