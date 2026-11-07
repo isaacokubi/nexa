@@ -43,16 +43,33 @@ fn stmts(b:&[Stmt],s:&mut Scope,fs:&HashMap<String,Signature>,ret:Option<Type>)-
  Stmt::Block(b)=>scoped_stmts(b,s,fs,ret)?
 }}Ok(())}
 fn scoped_stmts(b:&[Stmt],s:&mut Scope,fs:&HashMap<String,Signature>,ret:Option<Type>)->Result<(),Diagnostic>{s.push();let result=stmts(b,s,fs,ret);s.pop();result}
-fn always_returns(body:&[Stmt])->bool{
- for stmt in body{
-  match stmt{
-   Stmt::Return(_)=>return true,
-   Stmt::Block(inner) if always_returns(inner)=>return true,
-   Stmt::If(_,yes,no) if !no.is_empty()&&always_returns(yes)&&always_returns(no)=>return true,
-   _=>{}
-  }
- }
- false
+// Conservative control-flow analysis: true means execution may reach the
+// end of this statement list without returning. Loops are treated as
+// potentially fall-through because this AST has no break/termination proof.
+fn can_fall_through(body: &[Stmt]) -> bool {
+    for stmt in body {
+        let falls_through = match stmt {
+            Stmt::Return(_) => false,
+            Stmt::Block(inner) => can_fall_through(inner),
+            Stmt::If(_, yes, no) => can_fall_through(yes) || no.is_empty() || can_fall_through(no),
+            Stmt::While(_, _) => true,
+            _ => true,
+        };
+        if !falls_through {
+            return false;
+        }
+    }
+    true
 }
-pub fn check(p:&Program)->Result<(),Diagnostic>{let fs:HashMap<String,Signature>=p.functions.iter().map(|f|(f.name.clone(),Signature{params:f.param_types.clone(),ret:f.return_type.clone()})).collect();for Function{name,params,param_types,return_type,body,..}in &p.functions{let expected=return_type.as_deref().map(declared_type).transpose()?;let mut s=Scope::new();for (p,t) in params.iter().zip(param_types){let ty=match t{Some(name)=>declared_type(name)?,None=>Type::Unknown};s.define(p.clone(),ty);}stmts(body,&mut s,&fs,expected).map_err(|e|error(format!("in function '{name}': {}",e.message)))?;if expected.is_some_and(|t|t!=Type::Nil)&&!always_returns(body){return Err(error(format!("in function '{name}': not all control-flow paths return a value")))}}Ok(())}
-#[cfg(test)]mod tests{use super::*;use crate::{Lexer,Parser};fn c(src:&str)->Result<(),Diagnostic>{check(&Parser::new(Lexer::new(src).tokenize()?).parse()?)}#[test]fn rejects_string_math(){assert!(c("fn main(){print(\"x\"-1);}").is_err())}#[test]fn rejects_non_bool_condition(){assert!(c("fn main(){if 1 {print(2);}}").is_err())}#[test]fn validates_function_return_types(){assert!(c("fn answer()->Number{return 42;} fn main(){print(answer());}").is_ok());assert!(c("fn answer()->Number{return \"wrong\";} fn main(){answer();}").is_err());assert!(c("fn answer()->Number{return;} fn main(){answer();}").is_err())}#[test]fn validates_typed_function_parameters(){assert!(c("fn add(a: Number,b: Number){let total: Number=a+b;print(total);} fn main(){add(1,2);}").is_ok());assert!(c("fn add(a: Number){print(a);} fn main(){add(\"bad\");}").is_err())}#[test]fn validates_declared_local_types(){assert!(c("fn main(){let x: Number=1;let y: String=\"ok\";print(x);print(y);}").is_ok());assert!(c("fn main(){let x: Number=\"wrong\";}").is_err());assert!(c("fn main(){let x: Unknown=1;}").is_err())}#[test]fn checks_function_return_type_at_call_sites(){assert!(c("fn answer()->Number{return 42;} fn main(){let n: Number=answer();}").is_ok());assert!(c("fn answer()->Number{return 42;} fn main(){let s: String=answer();}").is_err())}#[test]fn requires_all_paths_to_return_annotated_values(){assert!(c("fn choose(flag: Bool)->Number{if flag{return 1;}else{return 2;}} fn main(){print(choose(true));}").is_ok());assert!(c("fn choose(flag: Bool)->Number{if flag{return 1;}} fn main(){print(choose(true));}").is_err());assert!(c("fn value()->Number{while true{return 1;}} fn main(){print(value());}").is_err())}#[test]fn lexical_shadowing_is_typechecked(){assert!(c("fn main(){let value: Number=1;{let value: String=\"inner\";print(value);}print(value);}").is_ok());assert!(c("fn main(){let value=1;let value=2;}").is_err());assert!(c("fn main(){var value: Number=1;{value=value+1;}print(value);}").is_ok());}#[test]fn accepts_typed_ops(){assert!(c("fn main(){let x=1+2;let y=\"a\"+\"b\";print(x);print(y);}").is_ok())}}
+pub fn check(p:&Program)->Result<(),Diagnostic>{let fs:HashMap<String,Signature>=p.functions.iter().map(|f|(f.name.clone(),Signature{params:f.param_types.clone(),ret:f.return_type.clone()})).collect();for Function{name,params,param_types,return_type,body,..}in &p.functions{let expected=return_type.as_deref().map(declared_type).transpose()?;let mut s=Scope::new();for (p,t) in params.iter().zip(param_types){let ty=match t{Some(name)=>declared_type(name)?,None=>Type::Unknown};s.define(p.clone(),ty);}stmts(body,&mut s,&fs,expected).map_err(|e|error(format!("in function '{name}': {}",e.message)))?;if expected.is_some_and(|t| t != Type::Nil) && can_fall_through(body) {
+            return Err(error(format!("in function '{name}': not all control-flow paths return a value")));
+        }}Ok(())}
+#[cfg(test)]mod tests{use super::*;use crate::{Lexer,Parser};fn c(src:&str)->Result<(),Diagnostic>{check(&Parser::new(Lexer::new(src).tokenize()?).parse()?)}#[test]fn rejects_string_math(){assert!(c("fn main(){print(\"x\"-1);}").is_err())}#[test]fn rejects_non_bool_condition(){assert!(c("fn main(){if 1 {print(2);}}").is_err())}#[test]fn validates_function_return_types(){assert!(c("fn answer()->Number{return 42;} fn main(){print(answer());}").is_ok());assert!(c("fn answer()->Number{return \"wrong\";} fn main(){answer();}").is_err());assert!(c("fn answer()->Number{return;} fn main(){answer();}").is_err())}#[test]fn validates_typed_function_parameters(){assert!(c("fn add(a: Number,b: Number){let total: Number=a+b;print(total);} fn main(){add(1,2);}").is_ok());assert!(c("fn add(a: Number){print(a);} fn main(){add(\"bad\");}").is_err())}#[test]fn validates_declared_local_types(){assert!(c("fn main(){let x: Number=1;let y: String=\"ok\";print(x);print(y);}").is_ok());assert!(c("fn main(){let x: Number=\"wrong\";}").is_err());assert!(c("fn main(){let x: Unknown=1;}").is_err())}#[test]fn checks_function_return_type_at_call_sites(){assert!(c("fn answer()->Number{return 42;} fn main(){let n: Number=answer();}").is_ok());assert!(c("fn answer()->Number{return 42;} fn main(){let s: String=answer();}").is_err())}#[test]
+fn requires_all_paths_to_return_annotated_values() {
+    assert!(c("fn choose(flag: Bool)->Number{if flag{return 1;}else{return 2;}} fn main(){print(choose(true));}").is_ok());
+    assert!(c("fn choose(flag: Bool)->Number{if flag{return 1;}} fn main(){print(choose(true));}").is_err());
+    assert!(c("fn choose(flag: Bool)->Number{if flag{{return 1;}}else{{return 2;}}} fn main(){print(choose(true));}").is_ok());
+    assert!(c("fn choose(flag: Bool)->Number{if flag{return 1;}return 2;} fn main(){print(choose(true));}").is_ok());
+    assert!(c("fn choose(flag: Bool)->Number{if flag{return 1;}else{print(2);}} fn main(){print(choose(true));}").is_err());
+    assert!(c("fn value()->Number{while true{return 1;}} fn main(){print(value());}").is_err());
+}#[test]fn lexical_shadowing_is_typechecked(){assert!(c("fn main(){let value: Number=1;{let value: String=\"inner\";print(value);}print(value);}").is_ok());assert!(c("fn main(){let value=1;let value=2;}").is_err());assert!(c("fn main(){var value: Number=1;{value=value+1;}print(value);}").is_ok());}#[test]fn accepts_typed_ops(){assert!(c("fn main(){let x=1+2;let y=\"a\"+\"b\";print(x);print(y);}").is_ok())}}
