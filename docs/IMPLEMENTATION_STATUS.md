@@ -103,13 +103,14 @@ Add precise spans to declaration/assignment/function diagnostics, then introduce
 - `Parser::new` now appends EOF for external token streams that omit it, and the parser handles an empty token vector without indexing or panicking.
 - Added tests for all depth limits and EOF normalization.
 - Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (47 passed), `cargo clippy --workspace --all-targets -- -D warnings`, `git diff --check`, and both examples via `run` and `ir-run` passed.
-- Recursive-depth/EOF work is committed as `b780540`; operator-chain work is complete but pending its checkpoint commit.
+- Recursive-depth/EOF work is committed as `b780540`; operator-chain hardening is committed as `3b07377`.
 - Next: introduce typed HIR with stable resolved primitive type identities. Native backend, full types, ownership, modules/packages, standard library, async, tooling, fuzzing, and releases remain incomplete.
 
 ## Declaration diagnostic spans (2026-11-07)
 - Declaration names and assignment targets now carry spans in the AST. Duplicate bindings, invalid type annotations, unresolved assignment targets, and immutable assignment errors report those locations in static checks and interpreter execution.
 - Added exact line/column regression checks for these diagnostics, including annotation errors raised during fixed-point inference.
 - Verification: `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo build --workspace`, `cargo test --workspace` (48 passed), Clippy with warnings denied, `git diff --check`, and both examples via `run` and `ir-run` passed. This work is currently uncommitted.
+- Committed and pushed as `7c6e14e` (`feat(diagnostics): preserve declaration source spans`).
 
 ## Accuracy rule
 A feature is considered implemented only when code, tests, documentation, and a verified CI/build result support the claim. Roadmap completion is not a substitute for these artifacts.
