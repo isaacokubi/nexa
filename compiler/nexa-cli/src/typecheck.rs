@@ -20,7 +20,9 @@ fn infer(e:&Expr,s:&Scope,fs:&HashMap<String,usize>)->Result<Type,Diagnostic>{
   Expr::Call(n,args)=>{if n=="print"{for a in args{infer(a,s,fs)?;}return Ok(Type::Nil)}let ar=fs.get(n).ok_or_else(||error(format!("undefined function '{n}'")))?;if *ar!=args.len(){return Err(error(format!("function '{n}' expects {ar} arguments, got {}",args.len())))}for a in args{infer(a,s,fs)?;}Ok(Type::Unknown)}
  }
 }
+fn declared_type(name:&str)->Result<Type,Diagnostic>{match name{"Number"=>Ok(Type::Number),"String"=>Ok(Type::String),"Bool"=>Ok(Type::Bool),"Nil"=>Ok(Type::Nil),_=>Err(error(format!("unknown type '{name}'")))}}
 fn stmts(b:&[Stmt],s:&mut Scope,fs:&HashMap<String,usize>)->Result<(),Diagnostic>{for x in b{match x{
+ Stmt::TypedLet(n,name,e,_)=>{let expected=declared_type(name)?;let actual=infer(e,s,fs)?;if actual!=expected&&actual!=Type::Unknown{return Err(error(format!("cannot initialize {name} variable '{n}' with {actual}")))}if s.contains_key(n){return Err(error(format!("'{n}' already declared in this scope")))}s.insert(n.clone(),expected);},
  Stmt::While(c,b)=>{let t=infer(c,s,fs)?;if t!=Type::Bool&&t!=Type::Unknown{return Err(error(format!("while condition must be Bool, found {t}")))}let mut x=s.clone();stmts(b,&mut x,fs)?;},
  Stmt::Let(n,e,_)=>{let t=infer(e,s,fs)?;if s.contains_key(n){return Err(error(format!("'{n}' already declared in this scope")))}s.insert(n.clone(),t);},
  Stmt::Assign(n,e)=>{let old=*s.get(n).ok_or_else(||error(format!("undefined variable '{n}'")))?;let new=infer(e,s,fs)?;if old!=new&&new!=Type::Unknown{return Err(error(format!("cannot assign {new} to '{n}' of type {old}")))}},
